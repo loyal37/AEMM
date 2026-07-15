@@ -15,7 +15,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 ## Current implementation status
 
 - Phase 1 foundation is implemented and validated locally on Windows 11.
-- The target GitHub repository `loyal37/AEMM` was empty at the start of Phase 1 and is ready for the initial publication.
+- The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
 

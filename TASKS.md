@@ -15,7 +15,7 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 - [x] Add typed frontend invoke client and startup status handling.
 - [x] Add unit tests for Phase 1 core services.
 - [x] Run formatting, build, Clippy, tests, and code/security review.
-- [~] Publish the Phase 1 foundation to `loyal37/AEMM`.
+- [x] Publish the Phase 1 foundation to `loyal37/AEMM`.
 
 ## Phase 2 — Game path management
 
