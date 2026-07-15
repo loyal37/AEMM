@@ -1,0 +1,66 @@
+use std::{path::Path, time::Duration};
+
+use sqlx::{
+    SqlitePool,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+};
+
+use crate::errors::AppError;
+
+#[derive(Debug, Clone)]
+pub struct Database {
+    pool: SqlitePool,
+}
+
+impl Database {
+    pub async fn connect(path: &Path) -> Result<Self, AppError> {
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .foreign_keys(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .busy_timeout(Duration::from_secs(5));
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .min_connections(1)
+            .connect_with(options)
+            .await?;
+
+        sqlx::migrate!("./migrations").run(&pool).await?;
+        let database = Self { pool };
+        database.health_check().await?;
+        Ok(database)
+    }
+
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    pub async fn health_check(&self) -> Result<(), AppError> {
+        sqlx::query("SELECT 1").execute(&self.pool).await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Database;
+
+    #[tokio::test]
+    async fn applies_migrations_and_seeds_default_profile() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let directory = tempfile::tempdir()?;
+        let database = Database::connect(&directory.path().join("mods.db")).await?;
+
+        let profile_name: String = sqlx::query_scalar(
+            "SELECT name FROM profiles WHERE id = '00000000-0000-0000-0000-000000000001'",
+        )
+        .fetch_one(database.pool())
+        .await?;
+
+        assert_eq!(profile_name, "默认配置");
+        Ok(())
+    }
+}

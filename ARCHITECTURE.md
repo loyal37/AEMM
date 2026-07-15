@@ -1,0 +1,182 @@
+# AEMM Architecture
+
+## Design principles
+
+- Ports and adapters: domain/core modules define behavior; Tauri, SQLite, filesystem, and EFMI are adapters.
+- Explicit ownership: AEMM only mutates its repository, staging roots, and validated deployment roots.
+- Transactional workflows: operations build a plan first and record enough state to undo partial work.
+- Async boundaries: Tauri commands are async; blocking archive/filesystem work runs in bounded blocking tasks; database access uses an async SQLite pool.
+- Evolution over speculation: interfaces reserve known variation points, while online services and dependency resolution wait until their phases.
+
+## Runtime flow
+
+```mermaid
+flowchart LR
+  UI["React UI"] -->|typed invoke DTO| CMD["Tauri commands"]
+  CMD --> SVC["AppServices"]
+  SVC --> CORE["Core use cases"]
+  SVC --> DB["SQLite repositories"]
+  CORE --> GAME["GameAdapter"]
+  CORE --> DEPLOY["ModDeploymentStrategy"]
+  CORE --> CONFLICT["ConflictAnalyzer"]
+  CORE --> FS["Safe filesystem/archive adapters"]
+```
+
+The webview never receives unrestricted filesystem primitives. Commands expose narrow application use cases.
+
+## Repository layout
+
+```text
+/
+├─ src/                         React application
+│  ├─ app/                     app composition, router, providers
+│  ├─ components/              reusable UI components
+│  ├─ features/                feature UI and frontend data access
+│  │  ├─ dashboard/
+│  │  ├─ mods/
+│  │  ├─ profiles/
+│  │  └─ settings/
+│  ├─ lib/                     invoke client and shared helpers
+│  ├─ pages/                   route-level composition
+│  ├─ styles/                  design tokens and global styles
+│  └─ types/                   frontend DTO types
+├─ src-tauri/
+│  ├─ migrations/              ordered SQLite migrations
+│  └─ src/
+│     ├─ commands/             thin Tauri transport adapters
+│     ├─ core/
+│     │  ├─ game/              game adapter contract and validation
+│     │  ├─ mods/              scanning, installation, metadata
+│     │  ├─ profiles/          profile application/use cases
+│     │  ├─ deployment/        deployment plans and strategies
+│     │  └─ conflicts/         analyzer contracts and conflict graph
+│     ├─ database/             pool, migrations, repositories
+│     ├─ errors/               domain and public command errors
+│     ├─ models/               domain entities and command DTOs
+│     ├─ services/             application orchestration/state
+│     ├─ utils/                path safety and other cross-cutting helpers
+│     ├─ lib.rs                Tauri application composition
+│     └─ main.rs               minimal executable entry point
+└─ project memory documents
+```
+
+## Backend module responsibilities
+
+### Game management
+
+`GameAdapter` encapsulates edition-specific behavior:
+
+- discover installation candidates from known roots, manifests, and registry entries;
+- validate an installation with evidence and a confidence score;
+- read version/build information;
+- resolve game executable and loader/deployment roots;
+- construct (but not blindly execute) a safe launch specification.
+
+An `EfmiGameAdapter` can wrap an Endfield adapter with loader-specific validation and launch behavior. CN/global variants become separate adapter configurations or implementations.
+
+### Mod management
+
+- `ModScanner`: scans owned repository entries and produces normalized candidates.
+- `ModMetadataManager`: reads author `mod.json`, infers missing metadata, and merges non-destructive local overrides.
+- `ModInstaller`: coordinates staged, rollback-capable installation plans.
+- `ModManager`: query and lifecycle orchestration.
+- `ModConflictDetector`: consumes normalized deployed artifacts and specialized analyzers.
+
+### Deployment
+
+`ModDeploymentStrategy` is a port with `plan_deploy`, `deploy`, `plan_revoke`, `revoke`, and `verify` semantics. Planned implementations include copy, move, symbolic link/junction, hard link, configuration editing, and EFMI-native deployment.
+
+Every deployment records a manifest of created paths, source content identity, strategy, and previous state. Revoke only removes paths recorded by that manifest and revalidates containment before each destructive action.
+
+### Profiles
+
+Profiles store enabled mod IDs and stable load-order positions. Switching profiles computes a reconciliation plan:
+
+1. snapshot current state;
+2. validate the target profile and all referenced mods;
+3. detect conflicts and missing content;
+4. revoke no-longer-enabled deployments;
+5. deploy newly enabled content in planned order;
+6. update profile state in one database transaction;
+7. roll back filesystem operations if reconciliation fails.
+
+## Core data model
+
+### Domain entities
+
+- `GameInstallation`: adapter ID, edition, install root, executable, loader root, detected version, validation evidence.
+- `AuthorModMetadata`: logical mod ID, name, author, semantic version string, description, category, compatible game version, website, preview relative path, and original document.
+- `LocalModMetadata`: display-name/category/description overrides, favorite flag, notes, and tags.
+- `InstalledMod`: AEMM UUID, logical ID, repository relative path, content fingerprint, size, install/update timestamps, and lifecycle state.
+- `ModFile`: normalized relative source path, optional deployment-relative target, size, content hash, and file role.
+- `Profile`: UUID, name, timestamps, and ordered `ProfileMod` entries.
+- `DeploymentManifest`: strategy ID, owned destination root, created entries, source fingerprints, and timestamps.
+- `Conflict`: kind, severity, participating mods, target/resource key, current winner/order, and analyzer evidence.
+
+### SQLite tables
+
+Initial migrations establish:
+
+- `mods`
+- `mod_author_metadata`
+- `mod_local_metadata`
+- `mod_files`
+- `profiles`
+- `profile_mods`
+- `deployment_records`
+
+Schema migrations are embedded and applied at startup. SQLite foreign keys and WAL mode are enabled. Machine-specific settings remain in `config.json`.
+
+## Installation workflow
+
+```mermaid
+flowchart TD
+  Input["Archive or folder"] --> Inspect["Detect type and validate input"]
+  Inspect --> Stage["Create operation-owned staging directory"]
+  Stage --> Extract["Safely extract/copy with quotas"]
+  Extract --> Root["Find candidate mod root(s)"]
+  Root --> Metadata["Read/infer author metadata"]
+  Metadata --> Inventory["Normalize paths, hash files, analyze EFMI resources"]
+  Inventory --> Plan["Check duplicate IDs/content and conflicts"]
+  Plan --> Confirm["Return immutable install plan to UI"]
+  Confirm --> Commit["Atomic move into repository + DB transaction"]
+  Commit --> Deploy["Optional deployment for active profile"]
+  Deploy --> Done["Emit progress/result"]
+  Extract -. error .-> Rollback["Rollback journal + clean owned staging"]
+  Commit -. error .-> Rollback
+  Deploy -. error .-> Rollback
+```
+
+Archive adapters must reject absolute/UNC/device paths, `..` traversal, unsafe links, case-insensitive collisions, reserved Windows names, excessive entry counts, suspicious compression ratios, and total extracted size above policy limits.
+
+## Enable and disable workflow
+
+Enable computes a deployment plan from a repository snapshot and target adapter, detects conflicts, executes through the chosen strategy, verifies output, persists a deployment manifest and profile state, then signals loader refresh if the adapter supports it.
+
+Disable resolves the recorded manifest, validates that every destination is still inside the approved deployment root and still owned by that manifest, revokes only those entries, preserves repository content, and updates profile state. It never deletes the installed mod itself.
+
+For EFMI, likely Phase 6 options are deploying a repository mod directory into `<EFMI>/Mods` or using EFMI's `DISABLED*` convention. The repository/deployment split remains authoritative so author files are preserved.
+
+## Conflict model
+
+The detector aggregates multiple analyzers:
+
+- path analyzer: same normalized deployment target;
+- EFMI/3DMigoto analyzer: duplicate or overlapping INI namespace, override hash, resource, and command-list keys;
+- future dependency/version analyzer.
+
+Conflicts reference ordered profile entries so the UI can show the current priority/winner only when the underlying loader provides deterministic ordering.
+
+## Error and logging model
+
+Domain errors are typed with `thiserror`; command adapters convert them to stable `CommandError { code, message, details? }` DTOs. Internal chains are written through `tracing`, while the UI receives actionable, non-sensitive messages.
+
+Logging uses daily rolling files plus debug console output. The non-blocking writer guard lives for the whole application lifetime.
+
+## Security boundaries
+
+- Paths stored in the database are relative whenever possible.
+- User-selected roots are canonicalized and typed (`RepositoryRoot`, `DeploymentRoot`, `StagingRoot`) before use.
+- All removal APIs require an owned root and a child path; roots and arbitrary absolute paths cannot be removed.
+- Installer commits prefer same-volume atomic renames; cross-volume copy uses a journal and verification.
+- Tauri capabilities and CSP remain least-privilege.
