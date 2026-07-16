@@ -44,7 +44,7 @@ pub struct GameSettings {
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            adapter_id: "endfield.efmi".to_owned(),
+            adapter_id: "endfield.local".to_owned(),
             edition: None,
             installation_path: None,
             loader_root: None,

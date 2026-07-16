@@ -21,6 +21,12 @@ impl From<AppError> for CommandError {
             AppError::ConfigValidation(message) => ("CONFIG_INVALID", message),
             AppError::UnsafePath(message) => ("UNSAFE_PATH", message),
             AppError::NotAvailable(message) => ("NOT_AVAILABLE", message),
+            AppError::GameValidation(message) => ("GAME_PATH_INVALID", message),
+            AppError::LoaderValidation(message) => ("EFMI_PATH_INVALID", message),
+            AppError::ProcessLaunch { .. } => (
+                "PROCESS_LAUNCH_ERROR",
+                "无法启动所选程序，请检查文件权限和本地日志。".to_owned(),
+            ),
             AppError::ConfigFormat(_) => (
                 "CONFIG_FORMAT_ERROR",
                 "配置文件格式无效，请检查本地日志。".to_owned(),
