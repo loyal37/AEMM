@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::{
     errors::AppError,
-    models::{AppSettings, CONFIG_SCHEMA_VERSION},
+    models::{AppSettings, CONFIG_SCHEMA_VERSION, GameSettings},
 };
 
 use super::AppPaths;
@@ -73,6 +73,18 @@ impl SettingsService {
         self.persist(&settings).await?;
         *self.settings.write().await = settings.clone();
         tracing::info!("application settings updated");
+        Ok(settings)
+    }
+
+    pub async fn update_game(&self, game: GameSettings) -> Result<AppSettings, AppError> {
+        let _write_guard = self.write_lock.lock().await;
+        let mut settings = self.settings.read().await.clone();
+        settings.game = game;
+        validate_settings(&settings)?;
+        prepare_storage_directories(&settings).await?;
+        self.persist(&settings).await?;
+        *self.settings.write().await = settings.clone();
+        tracing::info!("game settings updated");
         Ok(settings)
     }
 

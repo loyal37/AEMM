@@ -11,7 +11,10 @@ pub use app::{
 };
 pub use conflict::{Conflict, ConflictKind, ConflictSeverity};
 pub use deployment::{DeploymentContext, DeploymentEntry, DeploymentManifest, DeploymentPlan};
-pub use game::{GameInstallation, GameValidation, LaunchSpec};
+pub use game::{
+    DetectedGameInstallation, EfmiValidation, GameDiscoverySource, GameEdition, GameInstallation,
+    GameLaunchResult, GameStatus, GameValidation, GameVersionInfo, LaunchSpec,
+};
 pub use installed_mod::{
     AuthorModMetadata, InstalledMod, LocalModMetadata, ModFile, ModLifecycleState,
 };

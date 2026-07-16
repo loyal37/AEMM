@@ -10,6 +10,8 @@ import {
 import { Link } from "react-router";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
+import { useGameStatus, useLaunchGame } from "../features/game/useGameManager";
+import { commandErrorMessage } from "../lib/tauri";
 
 const statistics = [
   { label: "已安装模组", value: "0", hint: "仓库中暂无模组", icon: Boxes, tone: "violet" },
@@ -19,8 +21,17 @@ const statistics = [
 
 export function DashboardPage() {
   const bootstrap = useAppBootstrap();
+  const gameStatus = useGameStatus();
+  const launch = useLaunchGame();
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const databaseReady = bootstrap.data?.databaseReady === true;
+  const installation = gameStatus.data?.installation?.installation;
+  const gameTitle = gameStatus.data?.configured
+    ? `游戏目录已验证 · ${gameStatus.data.installation?.confidence ?? 0}%`
+    : "等待配置游戏目录";
+  const gameDescription = installation
+    ? `${installation.installationRoot} · 游戏版本 ${installation.version.value ?? "未知"}`
+    : "可在设置中自动检测鹰角启动器安装位置，或手动选择游戏目录。";
 
   return (
     <div className="page-stack">
@@ -34,9 +45,14 @@ export function DashboardPage() {
               <Plus size={17} />
               导入模组
             </Link>
-            <button className="button button--primary" type="button" disabled>
+            <button
+              className="button button--primary"
+              type="button"
+              disabled={!gameStatus.data?.canLaunch || launch.isPending}
+              onClick={() => launch.mutate()}
+            >
               <Play size={17} fill="currentColor" />
-              启动游戏
+              {launch.isPending ? "正在启动…" : "启动游戏"}
             </button>
           </>
         }
@@ -50,14 +66,24 @@ export function DashboardPage() {
           </div>
           <div>
             <span className="eyebrow">游戏状态</span>
-            <h2>等待配置游戏目录</h2>
-            <p>Phase 2 将接入国服/国际服检测与 EFMI 加载器验证。</p>
+            <h2>{gameTitle}</h2>
+            <p>{gameDescription}</p>
+            {gameStatus.data?.launchBlockReason ? (
+              <small className="hero-card__notice">{gameStatus.data.launchBlockReason}</small>
+            ) : null}
           </div>
         </div>
         <Link className="button button--secondary" to="/settings">
           前往设置
         </Link>
       </section>
+
+      {launch.isError ? (
+        <p className="inline-error">{commandErrorMessage(launch.error)}</p>
+      ) : null}
+      {launch.isSuccess ? (
+        <p className="inline-success">启动请求已提交，进程 ID：{launch.data.processId}</p>
+      ) : null}
 
       <section className="stats-grid" aria-label="模组统计">
         {statistics.map(({ label, value, hint, icon: Icon, tone }) => (

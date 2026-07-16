@@ -4,14 +4,20 @@ use async_trait::async_trait;
 
 use crate::{
     errors::AppError,
-    models::{GameInstallation, GameValidation, LaunchSpec},
+    models::{DetectedGameInstallation, GameInstallation, GameValidation, LaunchSpec},
 };
+
+mod efmi;
+mod endfield;
+
+pub use efmi::EfmiAdapter;
+pub use endfield::EndfieldAdapter;
 
 #[async_trait]
 pub trait GameAdapter: Send + Sync {
     fn adapter_id(&self) -> &'static str;
 
-    async fn discover(&self) -> Result<Vec<GameInstallation>, AppError>;
+    async fn discover(&self) -> Result<Vec<DetectedGameInstallation>, AppError>;
 
     async fn validate(&self, candidate: &Path) -> Result<GameValidation, AppError>;
 

@@ -3,14 +3,18 @@ use tauri::AppHandle;
 use crate::{
     database::Database,
     errors::AppError,
-    models::{AppBootstrap, AppSettings},
+    models::{
+        AppBootstrap, AppSettings, DetectedGameInstallation, GameLaunchResult, GameStatus,
+        LaunchMode,
+    },
 };
 
-use super::{AppPaths, SettingsService, logging::initialize_logging};
+use super::{AppPaths, GameService, SettingsService, logging::initialize_logging};
 
 pub struct AppServices {
     paths: AppPaths,
     settings: SettingsService,
+    game: GameService,
     database: Database,
     _logging_guard: super::logging::LoggingGuard,
 }
@@ -32,10 +36,12 @@ impl AppServices {
 
         let database = Database::connect(&paths.database_file).await?;
         tracing::info!("database migrations and health check completed");
+        let game = GameService::new(settings.clone());
 
         Ok(Self {
             paths,
             settings,
+            game,
             database,
             _logging_guard: logging_guard,
         })
@@ -61,5 +67,44 @@ impl AppServices {
 
     pub async fn update_settings(&self, settings: AppSettings) -> Result<AppSettings, AppError> {
         self.settings.update(settings).await
+    }
+
+    pub async fn game_status(&self) -> Result<GameStatus, AppError> {
+        self.game.status().await
+    }
+
+    pub async fn detect_game_installations(
+        &self,
+    ) -> Result<Vec<DetectedGameInstallation>, AppError> {
+        self.game.detect_installations().await
+    }
+
+    pub async fn configure_game_installation(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<GameStatus, AppError> {
+        self.game.configure_installation(path).await
+    }
+
+    pub async fn configure_efmi_loader(
+        &self,
+        path: Option<&std::path::Path>,
+    ) -> Result<GameStatus, AppError> {
+        self.game.configure_loader(path).await
+    }
+
+    pub async fn set_game_launch_mode(
+        &self,
+        launch_mode: LaunchMode,
+    ) -> Result<GameStatus, AppError> {
+        self.game.set_launch_mode(launch_mode).await
+    }
+
+    pub async fn validated_game_directory(&self) -> Result<std::path::PathBuf, AppError> {
+        self.game.validated_game_directory().await
+    }
+
+    pub async fn launch_game(&self) -> Result<GameLaunchResult, AppError> {
+        self.game.launch().await
     }
 }

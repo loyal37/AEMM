@@ -6,6 +6,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { NavLink } from "react-router";
+import { useGameStatus } from "../../features/game/useGameManager";
 
 const navigation = [
   { to: "/", label: "首页", icon: LayoutDashboard, end: true },
@@ -15,6 +16,9 @@ const navigation = [
 ];
 
 export function Sidebar() {
+  const gameStatus = useGameStatus();
+  const configured = gameStatus.data?.configured === true;
+
   return (
     <aside className="sidebar" aria-label="主导航">
       <div className="brand">
@@ -44,10 +48,10 @@ export function Sidebar() {
       <div className="sidebar-footer">
         <span className="eyebrow">当前游戏</span>
         <div className="game-chip">
-          <span className="status-dot status-dot--idle" />
+          <span className={`status-dot ${configured ? "status-dot--ready" : "status-dot--idle"}`} />
           <div>
             <strong>明日方舟：终末地</strong>
-            <span>等待设置路径</span>
+            <span>{configured ? "游戏目录已验证" : "等待设置路径"}</span>
           </div>
         </div>
       </div>

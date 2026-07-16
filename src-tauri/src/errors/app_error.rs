@@ -35,6 +35,19 @@ pub enum AppError {
 
     #[error("the requested operation is not available: {0}")]
     NotAvailable(String),
+
+    #[error("game installation validation failed: {0}")]
+    GameValidation(String),
+
+    #[error("EFMI loader validation failed: {0}")]
+    LoaderValidation(String),
+
+    #[error("failed to start process {path}")]
+    ProcessLaunch {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl AppError {
