@@ -10,7 +10,10 @@ use uuid::Uuid;
 use crate::{
     core::mods::{CachedModFile, RepositoryScan, ScanCache},
     errors::AppError,
-    models::{LocalModMetadata, MetadataSourceKind, ModLifecycleState, ModListItem},
+    models::{
+        LocalModMetadata, MetadataSourceKind, ModDetails, ModFileDetails, ModLifecycleState,
+        ModListItem,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -25,6 +28,12 @@ pub struct ModSyncOutcome {
     pub unchanged: u64,
     pub broken: u64,
     pub missing: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModContentReference {
+    pub repository_path: PathBuf,
+    pub preview_path: Option<PathBuf>,
 }
 
 impl ModStore {
@@ -299,7 +308,119 @@ impl ModStore {
         )
         .fetch_all(&self.pool)
         .await?;
-        rows.into_iter().map(row_to_list_item).collect()
+        rows.iter().map(row_to_list_item).collect()
+    }
+
+    pub async fn details(&self, mod_id: Uuid) -> Result<ModDetails, AppError> {
+        let mut transaction = self.pool.begin().await?;
+        let row = sqlx::query(
+            "SELECT
+                m.id, m.logical_id, m.repository_path, m.size_bytes,
+                m.installed_at, m.updated_at, m.lifecycle_state,
+                COALESCE(l.display_name_override, a.name) AS display_name,
+                a.author, a.version,
+                COALESCE(l.description_override, a.description) AS description,
+                COALESCE(l.category_override, a.category) AS category,
+                a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                COUNT(f.id) AS file_count,
+                a.name AS author_name, a.description AS author_description,
+                a.category AS author_category, a.game_version, a.website, a.source_kind,
+                l.display_name_override, l.category_override, l.description_override,
+                l.notes, COALESCE(l.tags_json, '[]') AS tags_json
+             FROM mods m
+             JOIN mod_author_metadata a ON a.mod_id = m.id
+             LEFT JOIN mod_local_metadata l ON l.mod_id = m.id
+             LEFT JOIN mod_files f ON f.mod_id = m.id
+             WHERE m.id = ?
+             GROUP BY m.id",
+        )
+        .bind(mod_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or_else(|| AppError::NotAvailable("模组记录不存在。".to_owned()))?;
+
+        let tags_json: String = row.try_get("tags_json")?;
+        let tags = serde_json::from_str::<Vec<String>>(&tags_json).map_err(|error| {
+            AppError::DataIntegrity(format!("模组 {mod_id} 的本地标签数据无效：{error}"))
+        })?;
+        let metadata_source =
+            metadata_source_from_database(&row.try_get::<String, _>("source_kind")?)?;
+        let item = row_to_list_item(&row)?;
+        let file_rows = sqlx::query(
+            "SELECT source_path, size_bytes, content_hash, file_role, modified_at
+             FROM mod_files
+             WHERE mod_id = ?
+             ORDER BY source_path COLLATE NOCASE ASC",
+        )
+        .bind(mod_id.to_string())
+        .fetch_all(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        let files = file_rows
+            .iter()
+            .map(row_to_file_details)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ModDetails {
+            item,
+            author_name: row.try_get("author_name")?,
+            author_description: row.try_get("author_description")?,
+            author_category: row.try_get("author_category")?,
+            game_version: row.try_get("game_version")?,
+            website: row.try_get("website")?,
+            metadata_source,
+            local_metadata: LocalModMetadata {
+                display_name_override: row.try_get("display_name_override")?,
+                category_override: row.try_get("category_override")?,
+                description_override: row.try_get("description_override")?,
+                favorite: row.try_get::<i64, _>("favorite")? != 0,
+                notes: row.try_get("notes")?,
+                tags,
+            },
+            files,
+        })
+    }
+
+    pub async fn content_reference(&self, mod_id: Uuid) -> Result<ModContentReference, AppError> {
+        let row = sqlx::query(
+            "SELECT m.repository_path, a.preview_path
+             FROM mods m
+             JOIN mod_author_metadata a ON a.mod_id = m.id
+             WHERE m.id = ?",
+        )
+        .bind(mod_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::NotAvailable("模组记录不存在。".to_owned()))?;
+        Ok(ModContentReference {
+            repository_path: PathBuf::from(row.try_get::<String, _>("repository_path")?),
+            preview_path: row
+                .try_get::<Option<String>, _>("preview_path")?
+                .map(PathBuf::from),
+        })
+    }
+
+    pub async fn set_favorite(&self, mod_ids: &[Uuid], favorite: bool) -> Result<u64, AppError> {
+        let now = unix_timestamp_seconds()?;
+        let mut transaction = self.pool.begin().await?;
+        for mod_id in mod_ids {
+            let result = sqlx::query(
+                "UPDATE mod_local_metadata SET favorite = ?, updated_at = ? WHERE mod_id = ?",
+            )
+            .bind(i64::from(favorite))
+            .bind(now)
+            .bind(mod_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+            if result.rows_affected() != 1 {
+                return Err(AppError::NotAvailable(format!(
+                    "模组 {mod_id} 不存在，请重新扫描后再试。"
+                )));
+            }
+        }
+        transaction.commit().await?;
+        u64::try_from(mod_ids.len())
+            .map_err(|_| AppError::DataIntegrity("收藏更新数量超过支持范围。".to_owned()))
     }
 
     pub async fn update_local_metadata(
@@ -355,11 +476,11 @@ impl ModStore {
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::NotAvailable("模组记录不存在。".to_owned()))?;
-        row_to_list_item(row)
+        row_to_list_item(&row)
     }
 }
 
-fn row_to_list_item(row: sqlx::sqlite::SqliteRow) -> Result<ModListItem, AppError> {
+fn row_to_list_item(row: &sqlx::sqlite::SqliteRow) -> Result<ModListItem, AppError> {
     let id_value: String = row.try_get("id")?;
     let id = Uuid::parse_str(&id_value)
         .map_err(|_| AppError::DataIntegrity(format!("无效的模组 UUID：{id_value}")))?;
@@ -381,6 +502,22 @@ fn row_to_list_item(row: sqlx::sqlite::SqliteRow) -> Result<ModListItem, AppErro
         installed_at: row.try_get("installed_at")?,
         updated_at: row.try_get("updated_at")?,
         lifecycle_state: lifecycle_from_database(&row.try_get::<String, _>("lifecycle_state")?)?,
+    })
+}
+
+fn row_to_file_details(row: &sqlx::sqlite::SqliteRow) -> Result<ModFileDetails, AppError> {
+    let modified_at_nanos: i64 = row.try_get("modified_at")?;
+    if modified_at_nanos < 0 {
+        return Err(AppError::DataIntegrity(
+            "模组文件修改时间不能为负数。".to_owned(),
+        ));
+    }
+    Ok(ModFileDetails {
+        source_path: PathBuf::from(row.try_get::<String, _>("source_path")?),
+        size_bytes: non_negative_u64(row.try_get("size_bytes")?, "size_bytes")?,
+        content_hash: row.try_get("content_hash")?,
+        file_role: row.try_get("file_role")?,
+        modified_at_ms: modified_at_nanos / 1_000_000,
     })
 }
 
@@ -409,6 +546,16 @@ fn metadata_source_to_database(value: MetadataSourceKind) -> &'static str {
     match value {
         MetadataSourceKind::ModJson => "mod_json",
         MetadataSourceKind::Inferred => "inferred",
+    }
+}
+
+fn metadata_source_from_database(value: &str) -> Result<MetadataSourceKind, AppError> {
+    match value {
+        "mod_json" => Ok(MetadataSourceKind::ModJson),
+        "inferred" => Ok(MetadataSourceKind::Inferred),
+        _ => Err(AppError::DataIntegrity(format!(
+            "未知的元数据来源：{value}"
+        ))),
     }
 }
 
@@ -481,6 +628,17 @@ mod tests {
                 },
             )
             .await?;
+        let details = store.details(item.id).await?;
+        assert_eq!(details.author_name, "Example");
+        assert_eq!(
+            details.local_metadata.display_name_override.as_deref(),
+            Some("Local Name")
+        );
+        assert_eq!(details.files.len(), 2);
+
+        assert_eq!(store.set_favorite(&[item.id], false).await?, 1);
+        assert!(!store.details(item.id).await?.item.favorite);
+        assert_eq!(store.set_favorite(&[item.id], true).await?, 1);
 
         let cache = store.load_scan_cache().await?;
         let second_scan = FileSystemModScanner::new()

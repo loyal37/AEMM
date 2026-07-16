@@ -35,6 +35,10 @@ pub fn run() {
             commands::game_commands::launch_game,
             commands::mod_commands::scan_mod_repository,
             commands::mod_commands::list_installed_mods,
+            commands::mod_commands::get_mod_details,
+            commands::mod_commands::set_mod_favorite,
+            commands::mod_commands::get_mod_preview,
+            commands::mod_commands::open_mod_directory,
             commands::mod_commands::update_local_mod_metadata
         ])
         .run(tauri::generate_context!());

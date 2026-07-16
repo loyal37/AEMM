@@ -2,7 +2,10 @@ use tauri::State;
 
 use crate::{
     errors::{CommandError, CommandResult},
-    models::{ModListItem, ModScanResult, UpdateLocalModMetadata},
+    models::{
+        ModDetails, ModListItem, ModMutationResult, ModPreview, ModScanResult, SetModFavorite,
+        UpdateLocalModMetadata,
+    },
     services::AppServices,
 };
 
@@ -22,6 +25,55 @@ pub async fn list_installed_mods(
         .list_installed_mods()
         .await
         .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn get_mod_details(
+    mod_id: uuid::Uuid,
+    services: State<'_, AppServices>,
+) -> CommandResult<ModDetails> {
+    services
+        .mod_details(mod_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn set_mod_favorite(
+    request: SetModFavorite,
+    services: State<'_, AppServices>,
+) -> CommandResult<ModMutationResult> {
+    services
+        .set_mod_favorite(request.mod_ids, request.favorite)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn get_mod_preview(
+    mod_id: uuid::Uuid,
+    services: State<'_, AppServices>,
+) -> CommandResult<Option<ModPreview>> {
+    services
+        .mod_preview(mod_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn open_mod_directory(
+    mod_id: uuid::Uuid,
+    services: State<'_, AppServices>,
+) -> CommandResult<()> {
+    let path = services
+        .mod_directory(mod_id)
+        .await
+        .map_err(CommandError::from)?;
+    tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|error| {
+        CommandError::from(crate::errors::AppError::NotAvailable(format!(
+            "无法打开模组目录：{error}"
+        )))
+    })
 }
 
 #[tauri::command]

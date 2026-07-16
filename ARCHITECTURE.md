@@ -118,6 +118,28 @@ flowchart LR
 
 Only direct child directories are repository mods. The scanner never executes content and never derives deployment destinations. Top-level files, links, junctions, reparse points, non-regular files, and unsafe relative names are skipped or reported. Duplicate case-insensitive logical IDs reject the snapshot before database mutation.
 
+### Mods frontend and detail queries
+
+Phase 4 keeps server and UI responsibilities separate:
+
+- `ModStore` returns compact list projections and consistent detail/file snapshots from SQLite transactions.
+- `ModService` validates local metadata, caps batch mutations, resolves UUID-backed repository paths, and validates preview signatures.
+- Tauri commands only translate typed requests/results and invoke the native opener after the service returns a canonical mod directory.
+- TanStack Query owns remote state and cache synchronization; pure query helpers own search/filter/sort behavior.
+- TanStack Virtual bounds card/list/file DOM to the visible viewport plus overscan. Card grids virtualize rows so responsive column changes do not require rendering the whole repository.
+
+```mermaid
+flowchart LR
+  Controls["Search / filters / sorting"] --> Projection["Pure ModListItem projection"]
+  Projection --> Virtual["Virtual rows + responsive columns"]
+  Virtual --> Detail["UUID detail route"]
+  Detail --> Query["Transactional detail + files snapshot"]
+  Detail --> Local["Local metadata update"]
+  Detail --> SafeIO["Contained preview / open directory"]
+```
+
+The browser-preview adapter supplies deterministic fixtures only when Tauri is absent. It exercises UI behavior but cannot mutate desktop files. Desktop commands never accept a repository or preview path from the webview.
+
 ### Deployment
 
 `ModDeploymentStrategy` is a port with `plan_deploy`, `deploy`, `plan_revoke`, `revoke`, and `verify` semantics. Planned implementations include copy, move, symbolic link/junction, hard link, configuration editing, and EFMI-native deployment.
@@ -221,3 +243,4 @@ Logging uses daily rolling files plus debug console output. The non-blocking wri
 - Tauri capabilities and CSP remain least-privilege.
 - Frontend directory selection has only `dialog:allow-open`; selected paths are still treated as untrusted and must pass backend adapter validation before persistence or use.
 - Open-directory and launch commands never accept arbitrary executable paths. They resolve saved settings through `GameService`, canonicalize again immediately before use, and launch without a command shell.
+- Mod preview/open-directory commands accept only a mod UUID. Preview reads are limited to 2 MiB, reject unsupported signatures including SVG/HTML, and traverse every repository component while rejecting links/reparse points.

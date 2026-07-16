@@ -1,19 +1,24 @@
 use std::{
     collections::HashSet,
+    fs,
     path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use tokio::sync::Mutex;
 
 use crate::{
     core::mods::{
-        FileSystemModScanner, ModScanner, RepositoryInitializationPolicy, RepositoryRoot,
+        FileSystemModScanner, ModScanner, RepositoryInitializationPolicy, RepositoryRelativePath,
+        RepositoryRoot,
     },
     database::{Database, ModStore},
     errors::AppError,
-    models::{LocalModMetadata, ModListItem, ModScanResult},
+    models::{
+        LocalModMetadata, ModDetails, ModListItem, ModMutationResult, ModPreview, ModScanResult,
+    },
 };
 
 use super::SettingsService;
@@ -24,6 +29,8 @@ const MAX_NOTES_LENGTH: usize = 32 * 1024;
 const MAX_TAGS: usize = 64;
 const MAX_TAG_LENGTH: usize = 64;
 const MAX_REPORTED_ISSUES: usize = 200;
+const MAX_FAVORITE_BATCH: usize = 10_000;
+const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct ModService {
@@ -52,19 +59,7 @@ impl ModService {
     pub async fn scan_repository(&self) -> Result<ModScanResult, AppError> {
         let _scan_guard = self.scan_lock.lock().await;
         let started = Instant::now();
-        let settings = self.settings.get().await;
-        let configured_path = settings.storage.repository_path;
-        let policy =
-            if paths_equal_case_insensitive(&configured_path, &self.default_repository_path) {
-                RepositoryInitializationPolicy::TrustedAemmDefault
-            } else {
-                RepositoryInitializationPolicy::EmptyOnly
-            };
-        let root_path = configured_path.clone();
-        let root = tokio::task::spawn_blocking(move || {
-            RepositoryRoot::open_or_initialize(&root_path, policy)
-        })
-        .await??;
+        let root = self.repository_root().await?;
 
         tracing::info!(repository_root = %root.path().display(), "starting mod repository scan");
         let cache = self.store.load_scan_cache().await?;
@@ -129,6 +124,52 @@ impl ModService {
         self.store.list().await
     }
 
+    pub async fn details(&self, mod_id: uuid::Uuid) -> Result<ModDetails, AppError> {
+        self.store.details(mod_id).await
+    }
+
+    pub async fn set_favorite(
+        &self,
+        mod_ids: Vec<uuid::Uuid>,
+        favorite: bool,
+    ) -> Result<ModMutationResult, AppError> {
+        if mod_ids.len() > MAX_FAVORITE_BATCH {
+            return Err(AppError::ModMetadata(format!(
+                "一次最多更新 {MAX_FAVORITE_BATCH} 个模组的收藏状态。"
+            )));
+        }
+        let mod_ids = mod_ids.into_iter().collect::<HashSet<_>>();
+        let mod_ids = mod_ids.into_iter().collect::<Vec<_>>();
+        let updated = self.store.set_favorite(&mod_ids, favorite).await?;
+        tracing::info!(updated, favorite, "mod favorite state updated");
+        Ok(ModMutationResult { updated })
+    }
+
+    pub async fn mod_directory(&self, mod_id: uuid::Uuid) -> Result<PathBuf, AppError> {
+        let reference = self.store.content_reference(mod_id).await?;
+        let root = self.repository_root().await?;
+        tokio::task::spawn_blocking(move || {
+            let relative = RepositoryRelativePath::new(reference.repository_path)?;
+            root.resolve_existing_mod_root(&relative)
+        })
+        .await?
+    }
+
+    pub async fn preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {
+        let reference = self.store.content_reference(mod_id).await?;
+        let Some(preview_path) = reference.preview_path else {
+            return Ok(None);
+        };
+        let root = self.repository_root().await?;
+        tokio::task::spawn_blocking(move || {
+            let relative =
+                RepositoryRelativePath::new(reference.repository_path.join(preview_path))?;
+            let preview_path = root.resolve_existing(&relative)?;
+            read_preview(&preview_path)
+        })
+        .await?
+    }
+
     pub async fn update_local_metadata(
         &self,
         mod_id: uuid::Uuid,
@@ -136,6 +177,55 @@ impl ModService {
     ) -> Result<ModListItem, AppError> {
         let metadata = validate_local_metadata(metadata)?;
         self.store.update_local_metadata(mod_id, &metadata).await
+    }
+
+    async fn repository_root(&self) -> Result<RepositoryRoot, AppError> {
+        let settings = self.settings.get().await;
+        let configured_path = settings.storage.repository_path;
+        let policy =
+            if paths_equal_case_insensitive(&configured_path, &self.default_repository_path) {
+                RepositoryInitializationPolicy::TrustedAemmDefault
+            } else {
+                RepositoryInitializationPolicy::EmptyOnly
+            };
+        tokio::task::spawn_blocking(move || {
+            RepositoryRoot::open_or_initialize(&configured_path, policy)
+        })
+        .await?
+    }
+}
+
+fn read_preview(path: &Path) -> Result<Option<ModPreview>, AppError> {
+    let metadata = fs::metadata(path).map_err(|source| AppError::file_system(path, source))?;
+    if !metadata.is_file() || metadata.len() > MAX_PREVIEW_BYTES {
+        tracing::warn!(preview = %path.display(), size = metadata.len(), "mod preview skipped because it is not a regular file or exceeds the size limit");
+        return Ok(None);
+    }
+    let bytes = fs::read(path).map_err(|source| AppError::file_system(path, source))?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_PREVIEW_BYTES {
+        tracing::warn!(preview = %path.display(), "mod preview grew beyond the size limit while being read");
+        return Ok(None);
+    }
+    let Some(media_type) = image_media_type(&bytes) else {
+        tracing::warn!(preview = %path.display(), "mod preview skipped because its file signature is unsupported");
+        return Ok(None);
+    };
+    Ok(Some(ModPreview {
+        data_url: format!("data:{media_type};base64,{}", STANDARD.encode(bytes)),
+    }))
+}
+
+fn image_media_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else {
+        None
     }
 }
 
@@ -208,7 +298,10 @@ fn normalized_path_key(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{models::LocalModMetadata, services::mods::validate_local_metadata};
+    use crate::{
+        models::LocalModMetadata,
+        services::mods::{image_media_type, validate_local_metadata},
+    };
 
     #[test]
     fn normalizes_and_deduplicates_local_tags() -> Result<(), Box<dyn std::error::Error>> {
@@ -223,5 +316,17 @@ mod tests {
         );
         assert_eq!(metadata.tags, vec!["Character"]);
         Ok(())
+    }
+
+    #[test]
+    fn accepts_only_supported_preview_signatures() {
+        assert_eq!(
+            image_media_type(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(image_media_type(b"\xff\xd8\xffrest"), Some("image/jpeg"));
+        assert_eq!(image_media_type(b"RIFF0000WEBPrest"), Some("image/webp"));
+        assert_eq!(image_media_type(b"GIF89arest"), Some("image/gif"));
+        assert_eq!(image_media_type(b"<svg onload='bad'>"), None);
     }
 }

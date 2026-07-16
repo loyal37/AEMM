@@ -135,3 +135,33 @@ export interface ModScanResult {
   durationMs: number;
   issues: string[];
 }
+
+export type MetadataSourceKind = "modJson" | "inferred";
+
+export interface ModFileDetails {
+  sourcePath: string;
+  sizeBytes: number;
+  contentHash: string | null;
+  fileRole: string;
+  modifiedAtMs: number;
+}
+
+export interface ModDetails {
+  item: ModListItem;
+  authorName: string;
+  authorDescription: string | null;
+  authorCategory: string | null;
+  gameVersion: string | null;
+  website: string | null;
+  metadataSource: MetadataSourceKind;
+  localMetadata: LocalModMetadata;
+  files: ModFileDetails[];
+}
+
+export interface ModMutationResult {
+  updated: number;
+}
+
+export interface ModPreview {
+  dataUrl: string;
+}

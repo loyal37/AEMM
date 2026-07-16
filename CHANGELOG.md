@@ -28,6 +28,11 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Transactional mod/metadata/file synchronization, missing-mod lifecycle handling, local display/category/description/favorite/notes/tags overrides, and Phase 3 SQLite migration.
 - Thin mod scan/list/local-metadata commands with TypeScript DTOs and invoke clients for the upcoming Mods UI.
 - Phase 3 repository, metadata, incremental scan, database consistency, duplicate-ID, and 1,000-mod performance regression tests.
+- Phase 4 Mods workspace with virtualized card/list views, search, category/status/favorite filters, all required sorting modes, selection, and batch favorites.
+- Full mod details with author metadata, local-only overrides/notes/tags, lifecycle state, preview, file statistics, and a virtualized Hash inventory.
+- UUID-based detail, safe preview, contained open-directory, and transactional favorite commands.
+- Live Dashboard mod totals, favorite counts, and recent-install activity.
+- Deterministic browser-preview mod fixtures plus responsive visual/interaction coverage at normal and minimum window sizes.
 
 ### Security
 
@@ -35,8 +40,11 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Revalidate game and loader executables as direct children of canonical working directories immediately before launch.
 - Treat every frontend-selected path as untrusted and refuse to persist it until the matching backend adapter succeeds.
 - Refuse to adopt non-empty custom repositories without a valid AEMM ownership marker, and skip links, junctions, reparse points, non-regular entries, unsafe relative names, and escaping preview paths during scans.
+- Restrict preview reads to contained repository files under 2 MiB with recognized raster signatures; reject SVG/HTML and never accept a frontend filesystem path for preview or directory opening.
+- Display author website metadata as untrusted text instead of creating an executable external link.
 
 ### Changed
 
 - Report unknown game versions explicitly instead of presenting Unity engine or launcher application versions as the Endfield game version.
 - Preserve vanished repository records and user overrides by marking them broken instead of deleting database state during synchronization.
+- Keep enabled/conflict UI explicitly unavailable until deployment and analyzer phases can provide truthful state.

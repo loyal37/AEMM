@@ -7,9 +7,19 @@ import type {
   GameLaunchResult,
   GameStatus,
   LocalModMetadata,
+  ModDetails,
   ModListItem,
+  ModMutationResult,
+  ModPreview,
   ModScanResult,
 } from "../types/app";
+import {
+  getPreviewDetails,
+  getPreviewImage,
+  getPreviewMods,
+  setPreviewFavorites,
+  updatePreviewMetadata,
+} from "./previewMods";
 
 const previewSettings: AppSettings = {
   schemaVersion: 1,
@@ -125,15 +135,51 @@ export async function scanModRepository(): Promise<ModScanResult> {
 }
 
 export async function listInstalledMods(): Promise<ModListItem[]> {
-  if (!isTauri()) return [];
+  if (!isTauri()) return getPreviewMods();
   return invoke<ModListItem[]>("list_installed_mods");
+}
+
+export async function getModDetails(modId: string): Promise<ModDetails> {
+  if (!isTauri()) {
+    const details = getPreviewDetails(modId);
+    if (!details) throw new Error("模组不存在。");
+    return details;
+  }
+  return invoke<ModDetails>("get_mod_details", { modId });
+}
+
+export async function setModFavorite(
+  modIds: string[],
+  favorite: boolean,
+): Promise<ModMutationResult> {
+  if (!isTauri()) {
+    setPreviewFavorites(modIds, favorite);
+    return { updated: modIds.length };
+  }
+  return invoke<ModMutationResult>("set_mod_favorite", {
+    request: { modIds, favorite },
+  });
+}
+
+export async function getModPreview(modId: string): Promise<ModPreview | null> {
+  if (!isTauri()) return getPreviewImage(modId);
+  return invoke<ModPreview | null>("get_mod_preview", { modId });
+}
+
+export async function openModDirectory(modId: string): Promise<void> {
+  requireDesktop();
+  return invoke<void>("open_mod_directory", { modId });
 }
 
 export async function updateLocalModMetadata(
   modId: string,
   metadata: LocalModMetadata,
 ): Promise<ModListItem> {
-  requireDesktop();
+  if (!isTauri()) {
+    const item = updatePreviewMetadata(modId, metadata);
+    if (!item) throw new Error("模组不存在。");
+    return item;
+  }
   return invoke<ModListItem>("update_local_mod_metadata", {
     request: { modId, metadata },
   });

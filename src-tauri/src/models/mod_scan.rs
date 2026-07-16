@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{LocalModMetadata, ModLifecycleState};
+use super::{LocalModMetadata, MetadataSourceKind, ModLifecycleState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,4 +46,47 @@ pub struct ModScanResult {
 pub struct UpdateLocalModMetadata {
     pub mod_id: Uuid,
     pub metadata: LocalModMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetModFavorite {
+    pub mod_ids: Vec<Uuid>,
+    pub favorite: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModMutationResult {
+    pub updated: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModFileDetails {
+    pub source_path: PathBuf,
+    pub size_bytes: u64,
+    pub content_hash: Option<String>,
+    pub file_role: String,
+    pub modified_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModDetails {
+    pub item: ModListItem,
+    pub author_name: String,
+    pub author_description: Option<String>,
+    pub author_category: Option<String>,
+    pub game_version: Option<String>,
+    pub website: Option<String>,
+    pub metadata_source: MetadataSourceKind,
+    pub local_metadata: LocalModMetadata,
+    pub files: Vec<ModFileDetails>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModPreview {
+    pub data_url: String,
 }

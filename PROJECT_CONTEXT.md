@@ -8,13 +8,13 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 - Desktop shell: Tauri 2
 - Backend: Rust 2024, Tokio, SQLx/SQLite, Serde, thiserror, tracing
-- Frontend: React 19, TypeScript, Vite, React Router, TanStack Query, Lucide icons
+- Frontend: React 19, TypeScript, Vite, React Router, TanStack Query/Virtual, Lucide icons
 - Target: Windows 10 and Windows 11 (`x86_64-pc-windows-msvc` initially)
 - Package manager: pnpm (the npm-compatible scripts remain `npm run ...` compatible after `npm install`)
 
 ## Current implementation status
 
-- Phase 1 foundation, Phase 2 game path management, and Phase 3 mod scanning/database persistence are implemented and validated locally on Windows 11.
+- Phase 1 foundation, Phase 2 game path management, Phase 3 mod scanning/database persistence, and Phase 4 Mods UI are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -53,6 +53,17 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - Thin scan/list/local-metadata commands plus matching TypeScript DTOs and invoke functions for the Phase 4 UI.
 - Tests covering repository ownership, tampered markers, traversal rejection, author-file preservation, duplicate logical IDs, incremental hash reuse, local-override preservation, missing mods, migrations, and a 1,000-mod performance fixture.
 
+### Phase 4 delivered
+
+- A production Mods workspace with card/list modes, deferred full-text search, category/lifecycle/favorite filters, name/install/update/size sorting, result selection, and transactional batch favorite operations.
+- TanStack Virtual row virtualization for both responsive card grids and compact lists, so only visible/overscan entries create DOM nodes for 1,000+ mod repositories.
+- A complete mod detail route with preview, effective metadata, original author metadata, local-only override/notes/tags editing, lifecycle warnings, installation/file statistics, and a virtualized file inventory.
+- Safe backend detail, preview, batch-favorite, and open-directory use cases. Commands accept only mod UUIDs; repository paths are resolved from SQLite through typed owned-root containment checks.
+- Preview files are capped at 2 MiB and accepted only after PNG/JPEG/WebP/GIF signature validation. SVG/HTML and arbitrary frontend file paths are never served by the desktop backend.
+- Dashboard installed/favorite counts and recent installs now use live mod database queries. Enabled/conflict statistics remain explicitly unavailable until their owning phases.
+- Browser-only deterministic preview fixtures for UI development; desktop mode always reads real SQLite records.
+- Visual and interaction checks at 1440×1000 and the 960×800 minimum window, including grid/list/detail rendering, search, selection, local editing, and horizontal-overflow checks.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -69,6 +80,8 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 12. A custom mod repository is accepted only when it is empty or already carries a valid AEMM ownership marker. The application default may be adopted during upgrade because it is resolved from AEMM's own app-data root.
 13. Phase 3 uses BLAKE3 for content identity and persists file modification timestamps as an incremental cache hint. Content fingerprints remain based on normalized path, size, and content hash so timestamp-only changes do not masquerade as mod updates.
 14. Every direct child directory of the repository is one installed mod. Archive/package root discovery remains an installer concern and is deliberately deferred to Phase 5.
+15. Phase 4 performs search/filter/sort in the webview over the compact `ModListItem` projection, while TanStack Virtual bounds rendered DOM. If online catalogs or repositories grow far beyond local 1,000-mod targets, query/pagination moves behind a backend port without changing card/detail components.
+16. Author-provided website values are displayed as untrusted text, not launched. Opening a folder and loading a preview are UUID-based backend operations with fresh repository containment validation.
 
 ## EFMI observations (read-only, 2026-07-15)
 
@@ -96,10 +109,12 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - No representative mod archives were present in the supplied EFMI folder.
 - Phase 3 does not infer EFMI deployment targets or loader priority from scanned files. File roles are descriptive only until real mod fixtures establish adapter-specific semantics.
 - Manual edits that create duplicate case-insensitive author IDs cause the scan transaction to fail with an actionable metadata error, preserving the previously consistent database state.
+- Phase 4 does not expose an enable switch or claim conflict results because deployment/profile state and verified conflict semantics belong to Phases 6 and 7.
+- Preview images larger than 2 MiB or with unsupported signatures fall back to a generated placeholder. A managed thumbnail cache can be added later if real fixtures require large-source downscaling.
 
 ## Next plan
 
-1. Phase 4: implement the virtualized Mods list/card UI, query controls, selection, favorites, and mod details over the Phase 3 commands.
+1. Phase 5: implement archive/folder import, secure staged extraction, root analysis, immutable confirmation plans, progress, commit, and rollback.
 2. Collect anonymized international game layouts and representative EFMI mod fixtures before Phase 5/6.
 3. Identify an authoritative CN/global game-version source without parsing stale logs.
 4. Decide the repository license before accepting external source redistribution or contributions.

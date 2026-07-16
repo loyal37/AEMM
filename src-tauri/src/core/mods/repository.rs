@@ -75,11 +75,15 @@ impl RepositoryRoot {
 
     pub fn resolve_existing(&self, relative: &RepositoryRelativePath) -> Result<PathBuf, AppError> {
         let candidate = self.canonical_path.join(relative.as_path());
-        if path_is_link_or_reparse_point(&candidate)? {
-            return Err(AppError::UnsafePath(format!(
-                "仓库条目 {} 是不允许的链接或重解析点。",
-                relative.storage_key()
-            )));
+        let mut current = self.canonical_path.clone();
+        for component in relative.as_path().components() {
+            current.push(component.as_os_str());
+            if path_is_link_or_reparse_point(&current)? {
+                return Err(AppError::UnsafePath(format!(
+                    "仓库条目 {} 包含不允许的链接或重解析点。",
+                    relative.storage_key()
+                )));
+            }
         }
         let canonical = fs::canonicalize(&candidate)
             .map_err(|source| AppError::file_system(&candidate, source))?;

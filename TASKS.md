@@ -37,8 +37,12 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 4 — Mods UI
 
-- [ ] Implement list/card views, search, filtering, sorting, selection, and favorites.
-- [ ] Add virtualized lists and mod detail route.
+- [x] Implement list/card views, search, filtering, sorting, selection, and favorites.
+- [x] Add responsive TanStack Virtual card/list rendering for 1,000+ mod repositories.
+- [x] Add mod detail route, original/local metadata separation, local editing, and virtualized files.
+- [x] Add UUID-only safe preview/open-directory commands and transactional batch favorite updates.
+- [x] Connect Dashboard installed/favorite statistics and recent installs.
+- [x] Run production build, strict TypeScript/Rust checks, backend tests, interaction tests, security review, and 1440/960 visual review.
 
 ## Phase 5 — Import and installation
 

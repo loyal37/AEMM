@@ -20,5 +20,8 @@ pub use installed_mod::{
     AuthorModMetadata, InstalledMod, LocalModMetadata, MetadataSourceKind, ModFile,
     ModLifecycleState,
 };
-pub use mod_scan::{ModListItem, ModScanResult, UpdateLocalModMetadata};
+pub use mod_scan::{
+    ModDetails, ModFileDetails, ModListItem, ModMutationResult, ModPreview, ModScanResult,
+    SetModFavorite, UpdateLocalModMetadata,
+};
 pub use profile::{Profile, ProfileMod};

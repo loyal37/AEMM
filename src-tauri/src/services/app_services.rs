@@ -5,7 +5,8 @@ use crate::{
     errors::AppError,
     models::{
         AppBootstrap, AppSettings, DetectedGameInstallation, GameLaunchResult, GameStatus,
-        LaunchMode, LocalModMetadata, ModListItem, ModScanResult,
+        LaunchMode, LocalModMetadata, ModDetails, ModListItem, ModMutationResult, ModPreview,
+        ModScanResult,
     },
 };
 
@@ -121,6 +122,26 @@ impl AppServices {
 
     pub async fn list_installed_mods(&self) -> Result<Vec<ModListItem>, AppError> {
         self.mods.list().await
+    }
+
+    pub async fn mod_details(&self, mod_id: uuid::Uuid) -> Result<ModDetails, AppError> {
+        self.mods.details(mod_id).await
+    }
+
+    pub async fn set_mod_favorite(
+        &self,
+        mod_ids: Vec<uuid::Uuid>,
+        favorite: bool,
+    ) -> Result<ModMutationResult, AppError> {
+        self.mods.set_favorite(mod_ids, favorite).await
+    }
+
+    pub async fn mod_preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {
+        self.mods.preview(mod_id).await
+    }
+
+    pub async fn mod_directory(&self, mod_id: uuid::Uuid) -> Result<std::path::PathBuf, AppError> {
+        self.mods.mod_directory(mod_id).await
     }
 
     pub async fn update_local_mod_metadata(

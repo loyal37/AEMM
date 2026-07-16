@@ -11,17 +11,14 @@ import { Link } from "react-router";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
 import { useGameStatus, useLaunchGame } from "../features/game/useGameManager";
+import { formatTimestamp } from "../features/mods/modQuery";
+import { useInstalledMods } from "../features/mods/useModManager";
 import { commandErrorMessage } from "../lib/tauri";
-
-const statistics = [
-  { label: "已安装模组", value: "0", hint: "仓库中暂无模组", icon: Boxes, tone: "violet" },
-  { label: "已启用", value: "0", hint: "当前配置方案", icon: CheckCircle2, tone: "green" },
-  { label: "检测到冲突", value: "0", hint: "尚未开始扫描", icon: AlertTriangle, tone: "amber" },
-];
 
 export function DashboardPage() {
   const bootstrap = useAppBootstrap();
   const gameStatus = useGameStatus();
+  const mods = useInstalledMods();
   const launch = useLaunchGame();
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const databaseReady = bootstrap.data?.databaseReady === true;
@@ -32,6 +29,21 @@ export function DashboardPage() {
   const gameDescription = installation
     ? `${installation.installationRoot} · 游戏版本 ${installation.version.value ?? "未知"}`
     : "可在设置中自动检测鹰角启动器安装位置，或手动选择游戏目录。";
+  const installedMods = mods.data ?? [];
+  const recentMods = [...installedMods]
+    .sort((left, right) => right.installedAt - left.installedAt)
+    .slice(0, 4);
+  const statistics = [
+    {
+      label: "已安装模组",
+      value: mods.isPending ? "…" : String(installedMods.length),
+      hint: installedMods.length ? `${installedMods.filter((item) => item.favorite).length} 个收藏` : "仓库中暂无模组",
+      icon: Boxes,
+      tone: "violet",
+    },
+    { label: "已启用", value: "—", hint: "Phase 6 接入部署状态", icon: CheckCircle2, tone: "green" },
+    { label: "检测到冲突", value: "—", hint: "Phase 7 接入分析结果", icon: AlertTriangle, tone: "amber" },
+  ];
 
   return (
     <div className="page-stack">
@@ -109,13 +121,28 @@ export function DashboardPage() {
             </div>
             <Link to="/mods">查看全部</Link>
           </div>
-          <div className="compact-empty">
-            <Boxes size={23} />
-            <div>
-              <strong>还没有安装模组</strong>
-              <span>导入第一个模组后会显示在这里。</span>
+          {recentMods.length ? (
+            <div className="recent-mod-list">
+              {recentMods.map((item) => (
+                <Link to={`/mods/${item.id}`} key={item.id}>
+                  <span className={`recent-mod-list__marker${item.lifecycleState === "broken" ? " is-warning" : ""}`} />
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{item.author ?? "未知作者"} · {formatTimestamp(item.installedAt)}</small>
+                  </span>
+                  <span>{item.category ?? "未分类"}</span>
+                </Link>
+              ))}
             </div>
-          </div>
+          ) : (
+            <div className="compact-empty">
+              <Boxes size={23} />
+              <div>
+                <strong>还没有安装模组</strong>
+                <span>扫描仓库后会显示在这里。</span>
+              </div>
+            </div>
+          )}
         </article>
 
         <article className="panel runtime-panel">
