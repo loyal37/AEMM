@@ -11,7 +11,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
@@ -28,6 +28,7 @@ import {
   useSetModFavorite,
 } from "../features/mods/useModManager";
 import { VirtualModBrowser } from "../features/mods/VirtualModBrowser";
+import { ImportModDialog } from "../features/mods/ImportModDialog";
 import { commandErrorMessage } from "../lib/tauri";
 
 export function ModsPage() {
@@ -38,6 +39,7 @@ export function ModsPage() {
   const [viewMode, setViewMode] = useState<ModViewMode>("grid");
   const [filters, setFilters] = useState<ModFilters>(defaultModFilters);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [importOpen, setImportOpen] = useState(false);
   const deferredQuery = useDeferredValue(filters.query);
   const allMods = mods.data ?? [];
   const categories = useMemo(() => modCategories(allMods), [allMods]);
@@ -46,6 +48,8 @@ export function ModsPage() {
     [allMods, deferredQuery, filters],
   );
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
+  const openImport = useCallback(() => setImportOpen(true), []);
+  const closeImport = useCallback(() => setImportOpen(false), []);
 
   useEffect(() => {
     const currentIds = new Set(allMods.map((item) => item.id));
@@ -82,7 +86,7 @@ export function ModsPage() {
       <PageHeader
         eyebrow="模组仓库"
         title="模组"
-        description="扫描、检索和整理仓库中的已安装模组；启用、部署与删除将在后续安全工作流中接入。"
+        description="扫描、检索和整理仓库中的模组，或通过隔离暂存、确认计划与自动回滚安全导入新模组。"
         actions={
           <>
             <button
@@ -94,7 +98,12 @@ export function ModsPage() {
               <RefreshCw className={scan.isPending ? "spin" : undefined} size={17} />
               {scan.isPending ? "正在扫描…" : "扫描仓库"}
             </button>
-            <button className="button button--primary" type="button" disabled title="Phase 5 接入">
+            <button
+              className="button button--primary"
+              type="button"
+              disabled={!desktopReady}
+              onClick={openImport}
+            >
               <Upload size={17} />
               导入模组
             </button>
@@ -279,7 +288,7 @@ export function ModsPage() {
             description={
               allMods.length
                 ? "调整搜索、分类或状态筛选后再试。"
-                : "将现有模组文件夹放入仓库后点击“扫描仓库”；安全导入将在 Phase 5 提供。"
+                : "点击“导入模组”，或将一个 ZIP、7z、RAR 压缩包或文件夹直接拖入窗口。"
             }
             action={
               allMods.length ? (
@@ -295,6 +304,12 @@ export function ModsPage() {
           />
         </section>
       )}
+      <ImportModDialog
+        desktopReady={desktopReady}
+        isOpen={importOpen}
+        onOpen={openImport}
+        onClose={closeImport}
+      />
     </div>
   );
 }

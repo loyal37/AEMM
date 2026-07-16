@@ -1,13 +1,61 @@
-use tauri::State;
+use std::sync::Arc;
+
+use tauri::{AppHandle, Emitter, State};
 
 use crate::{
     errors::{CommandError, CommandResult},
     models::{
-        ModDetails, ModListItem, ModMutationResult, ModPreview, ModScanResult, SetModFavorite,
-        UpdateLocalModMetadata,
+        ModDetails, ModImportOperation, ModImportPlan, ModInstallProgress, ModInstallResult,
+        ModListItem, ModMutationResult, ModPreview, ModScanResult, PrepareModImport,
+        SetModFavorite, UpdateLocalModMetadata,
     },
     services::AppServices,
 };
+
+const MOD_INSTALL_PROGRESS_EVENT: &str = "mod-install-progress";
+
+#[tauri::command]
+pub async fn prepare_mod_import(
+    request: PrepareModImport,
+    app: AppHandle,
+    services: State<'_, AppServices>,
+) -> CommandResult<ModImportPlan> {
+    services
+        .prepare_mod_import(request.source_path, progress_reporter(app))
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn commit_mod_import(
+    request: ModImportOperation,
+    app: AppHandle,
+    services: State<'_, AppServices>,
+) -> CommandResult<ModInstallResult> {
+    services
+        .commit_mod_import(request.operation_id, progress_reporter(app))
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn cancel_mod_import(
+    request: ModImportOperation,
+    services: State<'_, AppServices>,
+) -> CommandResult<()> {
+    services
+        .cancel_mod_import(request.operation_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+fn progress_reporter(app: AppHandle) -> crate::core::mods::InstallProgressReporter {
+    Arc::new(move |progress: ModInstallProgress| {
+        if let Err(error) = app.emit(MOD_INSTALL_PROGRESS_EVENT, progress) {
+            tracing::warn!(error = %error, "failed to emit mod installation progress");
+        }
+    })
+}
 
 #[tauri::command]
 pub async fn scan_mod_repository(services: State<'_, AppServices>) -> CommandResult<ModScanResult> {

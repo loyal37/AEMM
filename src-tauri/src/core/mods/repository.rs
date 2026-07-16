@@ -5,6 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use walkdir::WalkDir;
 
 use crate::{errors::AppError, utils::validate_relative_path};
 
@@ -109,6 +110,47 @@ impl RepositoryRoot {
             return Err(AppError::UnsafePath("模组根路径不是目录。".to_owned()));
         }
         Ok(path)
+    }
+
+    pub fn planned_mod_path(&self, relative: &RepositoryRelativePath) -> Result<PathBuf, AppError> {
+        if !relative.is_direct_child() || relative.storage_key() == REPOSITORY_MARKER_FILE {
+            return Err(AppError::UnsafePath(
+                "安装目标必须是仓库中的直属模组目录。".to_owned(),
+            ));
+        }
+        Ok(self.canonical_path.join(relative.as_path()))
+    }
+
+    pub fn remove_mod_root(&self, relative: &RepositoryRelativePath) -> Result<(), AppError> {
+        let root = self.resolve_existing_mod_root(relative)?;
+        let entries = WalkDir::new(&root)
+            .follow_links(false)
+            .contents_first(true)
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| {
+                AppError::UnsafePath(format!("无法安全遍历待回滚的仓库目录：{error}"))
+            })?;
+        for entry in &entries {
+            if path_is_link_or_reparse_point(entry.path())? {
+                return Err(AppError::UnsafePath(format!(
+                    "待回滚仓库目录包含链接或重解析点 {}，已拒绝删除。",
+                    entry.path().display()
+                )));
+            }
+        }
+        for entry in entries {
+            let path = entry.path();
+            if path == root {
+                continue;
+            }
+            if entry.file_type().is_dir() {
+                fs::remove_dir(path).map_err(|source| AppError::file_system(path, source))?;
+            } else {
+                fs::remove_file(path).map_err(|source| AppError::file_system(path, source))?;
+            }
+        }
+        fs::remove_dir(&root).map_err(|source| AppError::file_system(&root, source))
     }
 
     fn create_marker(&self, marker_path: &Path) -> Result<(), AppError> {

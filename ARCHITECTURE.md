@@ -118,6 +118,15 @@ flowchart LR
 
 Only direct child directories are repository mods. The scanner never executes content and never derives deployment destinations. Top-level files, links, junctions, reparse points, non-regular files, and unsafe relative names are skipped or reported. Duplicate case-insensitive logical IDs reject the snapshot before database mutation.
 
+Phase 5 implements the installer boundary with four focused adapters:
+
+- `StagingRoot` / `StagingOperation`: validate AEMM ownership markers, allocate UUID operation children, atomically persist journals, and delete only fully revalidated owned trees.
+- archive adapters: detect ZIP/7z/RAR from signatures, preflight every entry and quota, and write only validated relative paths into an empty operation payload.
+- root detector: locate one unique author manifest or unwrap simple packaging directories, while rejecting ambiguous multi-mod bundles instead of guessing.
+- `SafeModInstaller`: produce an immutable `ModImportPlan`, rescan before commit, move/copy into the owned repository, expose a commit receipt to the service, and recover or roll back from the journal.
+
+`ModService` is the transaction coordinator: it supplies current database identities to the core installer, serializes commit with repository scans, synchronizes SQLite, marks the journal database-synced, and only then removes staging. Tauri commands accept a source path only for the initial untrusted prepare call; commit/cancel accept only an operation UUID.
+
 ### Mods frontend and detail queries
 
 Phase 4 keeps server and UI responsibilities separate:
@@ -208,6 +217,10 @@ flowchart TD
 ```
 
 Archive adapters must reject absolute/UNC/device paths, `..` traversal, unsafe links, case-insensitive collisions, reserved Windows names, excessive entry counts, suspicious compression ratios, and total extracted size above policy limits.
+
+The concrete Phase 5 limits are 20,000 entries, 512 MiB per file, 2 GiB total output, 1,000:1 expansion, 1,024 UTF-8 bytes per stored path, and 64 path components. Limits are centralized in `ExtractionPolicy` for future settings/adapter tuning.
+
+Same-volume commit uses an atomic directory rename. Cross-volume commit copies to a unique `.aemm-install-<operation>.partial` direct child with `create_new`, rescans the copy to verify its BLAKE3 content fingerprint, then renames it to the final destination. The database is synchronized only after the filesystem commit. Any failure verifies the created destination fingerprint before moving it back or deleting it. Startup recovery cross-checks the journal against SQLite so a database-committed mod is preserved while an uncommitted destination is rolled back.
 
 ## Enable and disable workflow
 

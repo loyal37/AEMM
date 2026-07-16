@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  cancelModImport,
+  commitModImport,
   getModDetails,
   getModPreview,
   listInstalledMods,
   openModDirectory,
+  prepareModImport,
   scanModRepository,
   setModFavorite,
   updateLocalModMetadata,
@@ -29,6 +32,24 @@ export function useScanMods() {
       await queryClient.invalidateQueries({ queryKey: ["mods"] });
     },
   });
+}
+
+export function usePrepareModImport() {
+  return useMutation({ mutationFn: prepareModImport });
+}
+
+export function useCommitModImport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: commitModImport,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["mods"] });
+    },
+  });
+}
+
+export function useCancelModImport() {
+  return useMutation({ mutationFn: cancelModImport });
 }
 
 export function useModDetails(modId: string | undefined) {

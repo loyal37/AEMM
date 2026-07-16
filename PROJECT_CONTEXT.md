@@ -14,7 +14,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Current implementation status
 
-- Phase 1 foundation, Phase 2 game path management, Phase 3 mod scanning/database persistence, and Phase 4 Mods UI are implemented and validated locally on Windows 11.
+- Phase 1 foundation through Phase 5 safe mod import/installation are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -64,6 +64,17 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - Browser-only deterministic preview fixtures for UI development; desktop mode always reads real SQLite records.
 - Visual and interaction checks at 1440×1000 and the 960×800 minimum window, including grid/list/detail rendering, search, selection, local editing, and horizontal-overflow checks.
 
+### Phase 5 delivered
+
+- ZIP, 7z, RAR, and folder import adapters selected against the Rust 1.85 MSRV, with third-party and RARLab UnRAR licensing recorded in `THIRD_PARTY_NOTICES.md`.
+- An AEMM-owned staging boundary with root and per-operation markers. Only marker-verified operation children can be cleaned; user-selected roots and unowned non-empty custom staging directories are never deleted or adopted.
+- Signature-based archive detection, strict Windows-relative path validation, case-insensitive collision/ancestor checks, link/reparse rejection, encrypted/multipart rejection, entry/file/total-size limits, compression-ratio limits, and ZIP overlapping-data rejection.
+- Manual `create_new` extraction for ZIP and folder sources, a custom 7z extraction callback that ignores library-computed destination paths, and bounded RAR read-to-memory followed by AEMM-controlled writes. No archive adapter uses a native destination-path extraction shortcut.
+- Unique `mod.json` root detection, safe single-wrapper removal, explicit rejection of ambiguous multi-mod packages, stable content-derived IDs for manifest-less imports, and immutable confirmation plans persisted in operation journals.
+- Duplicate ID/content checks, no-overwrite destination allocation, same-volume atomic rename, verified cross-volume copy through a repository partial, database synchronization, progress events, cancellation, rollback, and startup recovery.
+- A desktop import dialog with archive/folder pickers, Tauri drag-and-drop, staged progress, plan/warning/blocker review, confirmation, rollback-aware error handling, and live Mods cache refresh.
+- Forty-eight passing Rust tests, including real ZIP/7z/RAR decoding, Zip Slip and 7z traversal rejection, ZIP symlink rejection, quotas, duplicate blocking, rollback, and interrupted-install recovery.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -82,6 +93,10 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 14. Every direct child directory of the repository is one installed mod. Archive/package root discovery remains an installer concern and is deliberately deferred to Phase 5.
 15. Phase 4 performs search/filter/sort in the webview over the compact `ModListItem` projection, while TanStack Virtual bounds rendered DOM. If online catalogs or repositories grow far beyond local 1,000-mod targets, query/pagination moves behind a backend port without changing card/detail components.
 16. Author-provided website values are displayed as untrusted text, not launched. Opening a folder and loading a preview are UUID-based backend operations with fresh repository containment validation.
+17. Phase 5 commits accept only an operation UUID. The frontend cannot submit a destination path or modify a prepared plan; the backend reloads the owned journal, rescans the candidate, and rechecks duplicates immediately before commit.
+18. Archive entry names are never trusted as output paths. ZIP and folder content is written with `create_new`, 7z's helper destination argument is ignored, and RAR content is read under a per-file bound before writing to a validated AEMM path.
+19. Manifest-less imports use `local.<content-fingerprint-prefix>` as their internal logical ID so staging/wrapper directory names cannot make identity unstable.
+20. Prepared plans are abandoned on restart because no UI owns their confirmation anymore. Interrupted commits are preserved only when SQLite proves the same repository path and fingerprint was committed; otherwise recovery verifies the fingerprint and rolls back.
 
 ## EFMI observations (read-only, 2026-07-15)
 
@@ -106,7 +121,7 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - 3DMigoto conflict semantics can involve INI section names, hashes, resources, and command lists—not only identical relative file paths. The first conflict engine must therefore support analyzer plugins.
 - EFMI recursive include/load ordering is not yet verified. AEMM must not claim deterministic load priority until this is tested against real mods and the loader.
 - Symlink/junction support, required privileges, anti-cheat implications, and loader compatibility need safe empirical validation.
-- No representative mod archives were present in the supplied EFMI folder.
+- No representative real-world mod archives were present in the supplied EFMI folder. Phase 5 format adapters are covered with generated ZIP/7z fixtures and an upstream RAR extraction vector, but root heuristics still need validation against actual community packages.
 - Phase 3 does not infer EFMI deployment targets or loader priority from scanned files. File roles are descriptive only until real mod fixtures establish adapter-specific semantics.
 - Manual edits that create duplicate case-insensitive author IDs cause the scan transaction to fail with an actionable metadata error, preserving the previously consistent database state.
 - Phase 4 does not expose an enable switch or claim conflict results because deployment/profile state and verified conflict semantics belong to Phases 6 and 7.
@@ -114,7 +129,7 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 
 ## Next plan
 
-1. Phase 5: implement archive/folder import, secure staged extraction, root analysis, immutable confirmation plans, progress, commit, and rollback.
-2. Collect anonymized international game layouts and representative EFMI mod fixtures before Phase 5/6.
+1. Phase 6: validate EFMI deployment behavior with representative mods, implement a manifest-backed deployment strategy, and expose safe single/batch enable and disable operations.
+2. Collect anonymized international game layouts and representative EFMI mod fixtures before finalizing Phase 6/7 semantics.
 3. Identify an authoritative CN/global game-version source without parsing stale logs.
 4. Decide the repository license before accepting external source redistribution or contributions.

@@ -3,6 +3,7 @@ mod conflict;
 mod deployment;
 mod game;
 mod installed_mod;
+mod mod_install;
 mod mod_scan;
 mod profile;
 
@@ -19,6 +20,10 @@ pub use game::{
 pub use installed_mod::{
     AuthorModMetadata, InstalledMod, LocalModMetadata, MetadataSourceKind, ModFile,
     ModLifecycleState,
+};
+pub use mod_install::{
+    ModImportOperation, ModImportPlan, ModImportSourceKind, ModInstallProgress,
+    ModInstallProgressStage, ModInstallResult, PrepareModImport,
 };
 pub use mod_scan::{
     ModDetails, ModFileDetails, ModListItem, ModMutationResult, ModPreview, ModScanResult,

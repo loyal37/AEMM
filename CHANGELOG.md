@@ -33,6 +33,11 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - UUID-based detail, safe preview, contained open-directory, and transactional favorite commands.
 - Live Dashboard mod totals, favorite counts, and recent-install activity.
 - Deterministic browser-preview mod fixtures plus responsive visual/interaction coverage at normal and minimum window sizes.
+- ZIP, 7z, RAR, and folder import adapters with signature detection, dependency/license review, and explicit third-party notices.
+- Owned staging roots and UUID operation journals, secure package-root detection, immutable install confirmation plans, duplicate checks, progress events, and cancellation.
+- Same-volume atomic repository commits, verified cross-volume partial copies, transactional database synchronization, rollback receipts, and startup recovery.
+- Desktop import UX with native archive/folder pickers, window drag-and-drop, progress, warnings/blockers, confirmation, completion, and rollback-aware error handling.
+- Phase 5 tests for real ZIP/7z/RAR decoding, Zip Slip, 7z traversal, ZIP symlinks, archive quotas, duplicate IDs, rollback, and interrupted installation recovery.
 
 ### Security
 
@@ -42,6 +47,9 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Refuse to adopt non-empty custom repositories without a valid AEMM ownership marker, and skip links, junctions, reparse points, non-regular entries, unsafe relative names, and escaping preview paths during scans.
 - Restrict preview reads to contained repository files under 2 MiB with recognized raster signatures; reject SVG/HTML and never accept a frontend filesystem path for preview or directory opening.
 - Display author website metadata as untrusted text instead of creating an executable external link.
+- Reject absolute/UNC/device/archive-parent paths, Windows control/reserved names, case-insensitive file/ancestor collisions, links/reparse points, encrypted or multipart packages, ZIP overlapping data, excessive expansion, and out-of-policy output sizes before installation.
+- Never pass archive entry paths to native extraction destinations: all installed files are created through AEMM-controlled `create_new` paths inside marker-owned staging.
+- Revalidate the staged fingerprint, logical ID, file count, size, duplicate state, journal ownership, and empty final destination immediately before commit; never overwrite existing repository content.
 
 ### Changed
 

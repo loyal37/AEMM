@@ -46,9 +46,11 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 5 — Import and installation
 
-- [ ] Add ZIP/7z/RAR/folder input adapters with dependency/license review.
-- [ ] Implement secure staged extraction and archive bomb limits.
-- [ ] Implement root detection, immutable install plans, progress events, transaction journal, and rollback.
+- [x] Add ZIP/7z/RAR/folder input adapters with dependency/license review.
+- [x] Implement secure staged extraction and archive bomb limits.
+- [x] Implement root detection, immutable install plans, progress events, transaction journal, and rollback.
+- [x] Add archive/folder pickers, Tauri drag-and-drop, confirmation, progress, blocker, success, and rollback-aware error UI.
+- [x] Run production build, strict Clippy, 48 backend tests, archive-security review, and startup recovery review.
 
 ## Phase 6 — Enable and disable
 

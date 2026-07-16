@@ -36,6 +36,15 @@ pub struct ModContentReference {
     pub preview_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoredModIdentity {
+    pub logical_id: String,
+    pub name: String,
+    pub repository_path: PathBuf,
+    pub content_fingerprint: Option<String>,
+    pub lifecycle_state: ModLifecycleState,
+}
+
 impl ModStore {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
@@ -309,6 +318,80 @@ impl ModStore {
         .fetch_all(&self.pool)
         .await?;
         rows.iter().map(row_to_list_item).collect()
+    }
+
+    pub async fn install_identities(&self) -> Result<Vec<StoredModIdentity>, AppError> {
+        let rows = sqlx::query(
+            "SELECT m.logical_id, m.repository_path, m.content_fingerprint, m.lifecycle_state,
+                    COALESCE(l.display_name_override, a.name) AS display_name
+             FROM mods m
+             JOIN mod_author_metadata a ON a.mod_id = m.id
+             LEFT JOIN mod_local_metadata l ON l.mod_id = m.id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(StoredModIdentity {
+                    logical_id: row.try_get("logical_id")?,
+                    name: row.try_get("display_name")?,
+                    repository_path: PathBuf::from(row.try_get::<String, _>("repository_path")?),
+                    content_fingerprint: row.try_get("content_fingerprint")?,
+                    lifecycle_state: lifecycle_from_database(
+                        &row.try_get::<String, _>("lifecycle_state")?,
+                    )?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn contains_repository_fingerprint(
+        &self,
+        repository_path: &Path,
+        content_fingerprint: &str,
+    ) -> Result<bool, AppError> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM mods
+             WHERE repository_path = ? COLLATE NOCASE
+               AND content_fingerprint = ?
+               AND lifecycle_state = 'installed'",
+        )
+        .bind(storage_path(repository_path))
+        .bind(content_fingerprint)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count == 1)
+    }
+
+    pub async fn list_item_by_repository_path(
+        &self,
+        repository_path: &Path,
+    ) -> Result<ModListItem, AppError> {
+        let row = sqlx::query(
+            "SELECT
+                m.id, m.logical_id, m.repository_path, m.size_bytes,
+                m.installed_at, m.updated_at, m.lifecycle_state,
+                COALESCE(l.display_name_override, a.name) AS display_name,
+                a.author, a.version,
+                COALESCE(l.description_override, a.description) AS description,
+                COALESCE(l.category_override, a.category) AS category,
+                a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                COUNT(f.id) AS file_count
+             FROM mods m
+             JOIN mod_author_metadata a ON a.mod_id = m.id
+             LEFT JOIN mod_local_metadata l ON l.mod_id = m.id
+             LEFT JOIN mod_files f ON f.mod_id = m.id
+             WHERE m.repository_path = ? COLLATE NOCASE
+             GROUP BY m.id",
+        )
+        .bind(storage_path(repository_path))
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| {
+            AppError::DataIntegrity("安装完成后未找到对应的模组数据库记录。".to_owned())
+        })?;
+        row_to_list_item(&row)
     }
 
     pub async fn details(&self, mod_id: Uuid) -> Result<ModDetails, AppError> {

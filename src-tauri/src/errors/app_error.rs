@@ -55,6 +55,12 @@ pub enum AppError {
     #[error("mod metadata is invalid: {0}")]
     ModMetadata(String),
 
+    #[error("archive processing failed: {0}")]
+    Archive(String),
+
+    #[error("mod installation failed: {0}")]
+    ModInstall(String),
+
     #[error("stored application data is inconsistent: {0}")]
     DataIntegrity(String),
 }

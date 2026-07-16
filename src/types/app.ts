@@ -165,3 +165,51 @@ export interface ModMutationResult {
 export interface ModPreview {
   dataUrl: string;
 }
+
+export type ModImportSourceKind = "zip" | "sevenZip" | "rar" | "directory";
+
+export interface ModImportPlan {
+  operationId: string;
+  sourceKind: ModImportSourceKind;
+  sourceName: string;
+  logicalId: string;
+  name: string;
+  author: string | null;
+  version: string | null;
+  description: string | null;
+  category: string | null;
+  fileCount: number;
+  sizeBytes: number;
+  contentFingerprint: string;
+  destinationRelativePath: string;
+  warnings: string[];
+  blockingIssues: string[];
+  canInstall: boolean;
+}
+
+export type ModInstallProgressStage =
+  | "inspecting"
+  | "extracting"
+  | "analyzing"
+  | "ready"
+  | "committing"
+  | "synchronizing"
+  | "rollingBack"
+  | "completed";
+
+export interface ModInstallProgress {
+  operationId: string;
+  stage: ModInstallProgressStage;
+  message: string;
+  processedItems: number;
+  totalItems: number | null;
+  processedBytes: number;
+  totalBytes: number | null;
+}
+
+export interface ModInstallResult {
+  operationId: string;
+  modId: string;
+  name: string;
+  repositoryPath: string;
+}

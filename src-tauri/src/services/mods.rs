@@ -11,13 +11,15 @@ use tokio::sync::Mutex;
 
 use crate::{
     core::mods::{
-        FileSystemModScanner, ModScanner, RepositoryInitializationPolicy, RepositoryRelativePath,
-        RepositoryRoot,
+        ExistingModIdentity, FileSystemModScanner, InstallProgressReporter, ModScanner,
+        RepositoryInitializationPolicy, RepositoryRelativePath, RepositoryRoot, SafeModInstaller,
+        StagingInitializationPolicy, StagingRoot, emit,
     },
     database::{Database, ModStore},
     errors::AppError,
     models::{
-        LocalModMetadata, ModDetails, ModListItem, ModMutationResult, ModPreview, ModScanResult,
+        LocalModMetadata, ModDetails, ModImportPlan, ModInstallProgressStage, ModInstallResult,
+        ModListItem, ModMutationResult, ModPreview, ModScanResult,
     },
 };
 
@@ -36,9 +38,11 @@ const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
 pub struct ModService {
     settings: SettingsService,
     default_repository_path: PathBuf,
+    default_staging_path: PathBuf,
     scanner: FileSystemModScanner,
     store: ModStore,
     scan_lock: Arc<Mutex<()>>,
+    install_lock: Arc<Mutex<()>>,
 }
 
 impl ModService {
@@ -46,18 +50,25 @@ impl ModService {
         settings: SettingsService,
         database: &Database,
         default_repository_path: PathBuf,
+        default_staging_path: PathBuf,
     ) -> Self {
         Self {
             settings,
             default_repository_path,
+            default_staging_path,
             scanner: FileSystemModScanner::new(),
             store: ModStore::new(database.pool().clone()),
             scan_lock: Arc::new(Mutex::new(())),
+            install_lock: Arc::new(Mutex::new(())),
         }
     }
 
     pub async fn scan_repository(&self) -> Result<ModScanResult, AppError> {
         let _scan_guard = self.scan_lock.lock().await;
+        self.scan_repository_locked().await
+    }
+
+    async fn scan_repository_locked(&self) -> Result<ModScanResult, AppError> {
         let started = Instant::now();
         let root = self.repository_root().await?;
 
@@ -118,6 +129,121 @@ impl ModService {
             "mod repository scan completed"
         );
         Ok(result)
+    }
+
+    pub async fn prepare_import(
+        &self,
+        source_path: PathBuf,
+        progress: InstallProgressReporter,
+    ) -> Result<ModImportPlan, AppError> {
+        let _install_guard = self.install_lock.lock().await;
+        let installer = self.installer().await?;
+        let existing = self.existing_install_identities().await?;
+        installer.prepare(source_path, existing, progress).await
+    }
+
+    pub async fn commit_import(
+        &self,
+        operation_id: uuid::Uuid,
+        progress: InstallProgressReporter,
+    ) -> Result<ModInstallResult, AppError> {
+        let _install_guard = self.install_lock.lock().await;
+        let _scan_guard = self.scan_lock.lock().await;
+        let installer = self.installer().await?;
+        let existing = self.existing_install_identities().await?;
+        let receipt = match installer
+            .commit(operation_id, existing, progress.clone())
+            .await
+        {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                if let Err(recovery_error) = installer.recover_operation(operation_id, false).await
+                {
+                    tracing::error!(operation_id = %operation_id, error = %recovery_error, "failed to clean an unsuccessful installation commit; startup recovery will retry");
+                }
+                return Err(error);
+            }
+        };
+        let sync_result = self.scan_repository_locked().await;
+        if let Err(error) = sync_result {
+            if let Err(rollback_error) = installer.rollback_receipt(&receipt, &progress).await {
+                tracing::error!(operation_id = %operation_id, error = %rollback_error, "database synchronization and installation rollback both failed");
+            }
+            return Err(error);
+        }
+        let item = match self
+            .store
+            .list_item_by_repository_path(receipt.destination_relative().as_path())
+            .await
+        {
+            Ok(item) => item,
+            Err(error) => {
+                if let Err(rollback_error) = installer.rollback_receipt(&receipt, &progress).await {
+                    tracing::error!(operation_id = %operation_id, error = %rollback_error, "installed record lookup and filesystem rollback both failed");
+                }
+                if let Err(rescan_error) = self.scan_repository_locked().await {
+                    tracing::error!(operation_id = %operation_id, error = %rescan_error, "failed to synchronize database after installation rollback");
+                }
+                return Err(error);
+            }
+        };
+        if let Err(error) = installer.mark_database_synced(&receipt) {
+            tracing::error!(operation_id = %operation_id, error = %error, "database is synchronized but installation journal state could not be persisted; startup recovery will preserve the committed mod");
+        }
+        let cleanup_installer = installer.clone();
+        let cleanup_receipt = receipt.clone();
+        if let Err(error) =
+            tokio::task::spawn_blocking(move || cleanup_installer.finalize(&cleanup_receipt))
+                .await?
+        {
+            tracing::warn!(operation_id = %operation_id, error = %error, "installation completed but staging cleanup is pending startup recovery");
+        }
+        emit(
+            &progress,
+            operation_id,
+            ModInstallProgressStage::Completed,
+            "模组安装完成。",
+            item.file_count,
+            Some(item.file_count),
+            item.size_bytes,
+            Some(item.size_bytes),
+        );
+        tracing::info!(operation_id = %operation_id, mod_id = %item.id, logical_id = %item.logical_id, "mod installation completed");
+        Ok(ModInstallResult {
+            operation_id,
+            mod_id: item.id,
+            name: item.name,
+            repository_path: item.repository_path,
+        })
+    }
+
+    pub async fn cancel_import(&self, operation_id: uuid::Uuid) -> Result<(), AppError> {
+        let _install_guard = self.install_lock.lock().await;
+        let installer = self.installer().await?;
+        tokio::task::spawn_blocking(move || installer.cancel(operation_id)).await?
+    }
+
+    pub async fn recover_pending_installations(&self) -> Result<(), AppError> {
+        let _install_guard = self.install_lock.lock().await;
+        let _scan_guard = self.scan_lock.lock().await;
+        let installer = self.installer().await?;
+        let pending = installer.pending_installs()?;
+        for install in pending {
+            let database_has_committed_mod = self
+                .store
+                .contains_repository_fingerprint(
+                    &install.destination_relative,
+                    &install.content_fingerprint,
+                )
+                .await?;
+            if let Err(error) = installer
+                .recover_operation(install.operation_id, database_has_committed_mod)
+                .await
+            {
+                tracing::error!(operation_id = %install.operation_id, state = ?install.state, error = %error, "failed to recover interrupted mod installation; unsafe files were preserved for manual inspection");
+            }
+        }
+        Ok(())
     }
 
     pub async fn list(&self) -> Result<Vec<ModListItem>, AppError> {
@@ -192,6 +318,42 @@ impl ModService {
             RepositoryRoot::open_or_initialize(&configured_path, policy)
         })
         .await?
+    }
+
+    async fn staging_root(&self) -> Result<StagingRoot, AppError> {
+        let settings = self.settings.get().await;
+        let configured_path = settings.storage.staging_path;
+        let policy = if paths_equal_case_insensitive(&configured_path, &self.default_staging_path) {
+            StagingInitializationPolicy::TrustedAemmDefault
+        } else {
+            StagingInitializationPolicy::EmptyOnly
+        };
+        tokio::task::spawn_blocking(move || {
+            StagingRoot::open_or_initialize(&configured_path, policy)
+        })
+        .await?
+    }
+
+    async fn installer(&self) -> Result<SafeModInstaller, AppError> {
+        let repository = self.repository_root().await?;
+        let staging = self.staging_root().await?;
+        Ok(SafeModInstaller::new(repository, staging))
+    }
+
+    async fn existing_install_identities(&self) -> Result<Vec<ExistingModIdentity>, AppError> {
+        Ok(self
+            .store
+            .install_identities()
+            .await?
+            .into_iter()
+            .map(|identity| ExistingModIdentity {
+                logical_id: identity.logical_id,
+                name: identity.name,
+                repository_path: identity.repository_path,
+                content_fingerprint: identity.content_fingerprint,
+                lifecycle_state: identity.lifecycle_state,
+            })
+            .collect())
     }
 }
 

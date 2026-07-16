@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AppBootstrap,
   AppSettings,
@@ -8,6 +9,8 @@ import type {
   GameStatus,
   LocalModMetadata,
   ModDetails,
+  ModImportPlan,
+  ModInstallResult,
   ModListItem,
   ModMutationResult,
   ModPreview,
@@ -132,6 +135,48 @@ export function commandErrorMessage(error: unknown): string {
 export async function scanModRepository(): Promise<ModScanResult> {
   requireDesktop();
   return invoke<ModScanResult>("scan_mod_repository");
+}
+
+export async function selectModArchive(): Promise<string | null> {
+  requireDesktop();
+  const selected = await open({
+    multiple: false,
+    directory: false,
+    title: "选择模组压缩包",
+    filters: [{ name: "模组压缩包", extensions: ["zip", "7z", "rar"] }],
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+export async function selectModDirectory(): Promise<string | null> {
+  requireDesktop();
+  const selected = await open({
+    multiple: false,
+    directory: true,
+    title: "选择模组文件夹",
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+export async function prepareModImport(sourcePath: string): Promise<ModImportPlan> {
+  requireDesktop();
+  return invoke<ModImportPlan>("prepare_mod_import", {
+    request: { sourcePath },
+  });
+}
+
+export async function commitModImport(operationId: string): Promise<ModInstallResult> {
+  requireDesktop();
+  return invoke<ModInstallResult>("commit_mod_import", {
+    request: { operationId },
+  });
+}
+
+export async function cancelModImport(operationId: string): Promise<void> {
+  requireDesktop();
+  return invoke<void>("cancel_mod_import", {
+    request: { operationId },
+  });
 }
 
 export async function listInstalledMods(): Promise<ModListItem[]> {

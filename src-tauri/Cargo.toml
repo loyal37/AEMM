@@ -31,8 +31,11 @@ tokio = { version = "1.49.0", features = ["fs", "sync"] }
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+unrar = "0.5.8"
 uuid = { version = "1.21.0", features = ["serde", "v4"] }
 walkdir = "2.5.0"
+zip = { version = "7.2.0", default-features = false, features = ["bzip2", "deflate-flate2-zlib-rs", "deflate64", "lzma", "ppmd", "xz", "zstd"] }
+sevenz-rust2 = { version = "0.15.2", features = ["brotli", "deflate", "lz4", "zstd"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56.0"

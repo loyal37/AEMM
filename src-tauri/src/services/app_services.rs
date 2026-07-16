@@ -1,12 +1,13 @@
 use tauri::AppHandle;
 
 use crate::{
+    core::mods::InstallProgressReporter,
     database::Database,
     errors::AppError,
     models::{
         AppBootstrap, AppSettings, DetectedGameInstallation, GameLaunchResult, GameStatus,
-        LaunchMode, LocalModMetadata, ModDetails, ModListItem, ModMutationResult, ModPreview,
-        ModScanResult,
+        LaunchMode, LocalModMetadata, ModDetails, ModImportPlan, ModInstallResult, ModListItem,
+        ModMutationResult, ModPreview, ModScanResult,
     },
 };
 
@@ -43,7 +44,11 @@ impl AppServices {
             settings.clone(),
             &database,
             paths.repository_directory.clone(),
+            paths.staging_directory.clone(),
         );
+        if let Err(error) = mods.recover_pending_installations().await {
+            tracing::error!(error = %error, diagnostic = ?error, "mod installation recovery could not complete during startup");
+        }
 
         Ok(Self {
             paths,
@@ -122,6 +127,26 @@ impl AppServices {
 
     pub async fn list_installed_mods(&self) -> Result<Vec<ModListItem>, AppError> {
         self.mods.list().await
+    }
+
+    pub async fn prepare_mod_import(
+        &self,
+        source_path: std::path::PathBuf,
+        progress: InstallProgressReporter,
+    ) -> Result<ModImportPlan, AppError> {
+        self.mods.prepare_import(source_path, progress).await
+    }
+
+    pub async fn commit_mod_import(
+        &self,
+        operation_id: uuid::Uuid,
+        progress: InstallProgressReporter,
+    ) -> Result<ModInstallResult, AppError> {
+        self.mods.commit_import(operation_id, progress).await
+    }
+
+    pub async fn cancel_mod_import(&self, operation_id: uuid::Uuid) -> Result<(), AppError> {
+        self.mods.cancel_import(operation_id).await
     }
 
     pub async fn mod_details(&self, mod_id: uuid::Uuid) -> Result<ModDetails, AppError> {

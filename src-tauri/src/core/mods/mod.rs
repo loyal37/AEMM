@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -8,30 +8,28 @@ use crate::{
     models::{AuthorModMetadata, InstalledMod},
 };
 
+mod archive;
+mod installer;
 mod metadata;
 mod repository;
+mod root_detector;
 mod scanner;
+mod staging;
 
+pub use archive::{ExtractionPolicy, InstallProgressReporter, StagedSource, emit, stage_source};
+pub use installer::{
+    CommitReceipt, ExistingModIdentity, InstallJournalState, PendingInstall, SafeModInstaller,
+};
 pub use metadata::FileSystemMetadataManager;
 pub use repository::{RepositoryInitializationPolicy, RepositoryRelativePath, RepositoryRoot};
+pub use root_detector::{DetectedModRoot, detect_mod_root};
 pub use scanner::{
     CachedModFile, FileSystemModScanner, RepositoryScan, ScanCache, ScanIssue, ScannedMod,
 };
-
-#[derive(Debug, Clone)]
-pub enum ModInstallSource {
-    Archive(PathBuf),
-    Directory(PathBuf),
-}
-
-#[derive(Debug, Clone)]
-pub struct InstallPlan {
-    pub operation_id: Uuid,
-    pub source: ModInstallSource,
-    pub candidate: ScannedMod,
-    pub destination_relative_path: PathBuf,
-    pub warnings: Vec<String>,
-}
+pub use staging::{
+    OPERATION_MARKER_FILE, STAGING_MARKER_FILE, StagingInitializationPolicy, StagingOperation,
+    StagingRoot,
+};
 
 #[async_trait]
 pub trait ModScanner: Send + Sync {
@@ -46,13 +44,6 @@ pub trait ModScanner: Send + Sync {
 #[async_trait]
 pub trait ModMetadataManager: Send + Sync {
     async fn read_author_metadata(&self, mod_root: &Path) -> Result<AuthorModMetadata, AppError>;
-}
-
-#[async_trait]
-pub trait ModInstaller: Send + Sync {
-    async fn prepare(&self, source: ModInstallSource) -> Result<InstallPlan, AppError>;
-    async fn commit(&self, plan: InstallPlan) -> Result<InstalledMod, AppError>;
-    async fn rollback(&self, operation_id: Uuid) -> Result<(), AppError>;
 }
 
 #[async_trait]

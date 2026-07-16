@@ -58,7 +58,7 @@ fn validate_windows_segment(segment: &str) -> Result<(), AppError> {
     if segment.is_empty()
         || segment.ends_with(['.', ' '])
         || segment.chars().any(|character| {
-            matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*') || character == '\0'
+            matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*') || character <= '\u{001f}'
         })
     {
         return Err(AppError::UnsafePath(
