@@ -92,3 +92,46 @@ export interface GameLaunchResult {
   processId: number;
   mode: GameLaunchMode;
 }
+
+export type ModLifecycleState = "installing" | "installed" | "broken" | "removing";
+
+export interface LocalModMetadata {
+  displayNameOverride: string | null;
+  categoryOverride: string | null;
+  descriptionOverride: string | null;
+  favorite: boolean;
+  notes: string | null;
+  tags: string[];
+}
+
+export interface ModListItem {
+  id: string;
+  logicalId: string;
+  repositoryPath: string;
+  name: string;
+  author: string | null;
+  version: string | null;
+  description: string | null;
+  category: string | null;
+  previewPath: string | null;
+  favorite: boolean;
+  sizeBytes: number;
+  fileCount: number;
+  installedAt: number;
+  updatedAt: number;
+  lifecycleState: ModLifecycleState;
+}
+
+export interface ModScanResult {
+  discovered: number;
+  added: number;
+  updated: number;
+  unchanged: number;
+  broken: number;
+  missing: number;
+  hashedFiles: number;
+  reusedHashes: number;
+  skippedEntries: number;
+  durationMs: number;
+  issues: string[];
+}

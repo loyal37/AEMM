@@ -14,7 +14,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Current implementation status
 
-- Phase 1 foundation and Phase 2 game path management are implemented and validated locally on Windows 11.
+- Phase 1 foundation, Phase 2 game path management, and Phase 3 mod scanning/database persistence are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -43,6 +43,16 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - Settings and Dashboard UI for automatic detection, manual selection, status/evidence, EFMI setup, launch mode, open directory, and one-click launch.
 - Sixteen passing Rust tests, including false-positive identity checks, stale EFMI launch paths, and launch-spec containment tests.
 
+### Phase 3 delivered
+
+- An owned repository boundary with a versioned `.aemm-repository.json` marker, canonical root validation, and rejection of unowned non-empty custom directories, links, junctions, and other reparse points.
+- An asynchronous filesystem scanner that treats direct repository children as installed mods, skips unsafe/non-regular entries, normalizes Windows-relative paths, inventories file roles/sizes/timestamps, and computes streaming BLAKE3 hashes off the Tauri thread.
+- Incremental scanning that reuses persisted hashes when file size and modification time are unchanged, while deriving a deterministic content fingerprint for database synchronization.
+- Tolerant `mod.json` parsing with validation, unknown-field preservation, safe relative preview resolution, and stable inferred internal metadata when an author manifest is absent or invalid. Author documents are never rewritten.
+- Transactional SQLite synchronization for mods, author metadata, local overrides, file inventories, hashes, timestamps, missing/broken state, and migration-backed local tags.
+- Thin scan/list/local-metadata commands plus matching TypeScript DTOs and invoke functions for the Phase 4 UI.
+- Tests covering repository ownership, tampered markers, traversal rejection, author-file preservation, duplicate logical IDs, incremental hash reuse, local-override preservation, missing mods, migrations, and a 1,000-mod performance fixture.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -56,6 +66,9 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 9. Game discovery and identity validation are separate from loader validation. A valid EFMI directory can be saved while `launch_ready` remains false, so stale third-party configuration is visible without being executed.
 10. Process launch never accepts a frontend executable or argument list. The backend rebuilds a launch specification from saved settings, revalidates it, and requires the executable to be a direct child of its canonical working directory.
 11. Game versions are reported only from a future authoritative manifest/version source. Engine/file versions and launcher application versions are retained as evidence only, not presented as the game version.
+12. A custom mod repository is accepted only when it is empty or already carries a valid AEMM ownership marker. The application default may be adopted during upgrade because it is resolved from AEMM's own app-data root.
+13. Phase 3 uses BLAKE3 for content identity and persists file modification timestamps as an incremental cache hint. Content fingerprints remain based on normalized path, size, and content hash so timestamp-only changes do not masquerade as mod updates.
+14. Every direct child directory of the repository is one installed mod. Archive/package root discovery remains an installer concern and is deliberately deferred to Phase 5.
 
 ## EFMI observations (read-only, 2026-07-15)
 
@@ -81,10 +94,12 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - EFMI recursive include/load ordering is not yet verified. AEMM must not claim deterministic load priority until this is tested against real mods and the loader.
 - Symlink/junction support, required privileges, anti-cheat implications, and loader compatibility need safe empirical validation.
 - No representative mod archives were present in the supplied EFMI folder.
+- Phase 3 does not infer EFMI deployment targets or loader priority from scanned files. File roles are descriptive only until real mod fixtures establish adapter-specific semantics.
+- Manual edits that create duplicate case-insensitive author IDs cause the scan transaction to fail with an actionable metadata error, preserving the previously consistent database state.
 
 ## Next plan
 
-1. Phase 3: implement asynchronous repository scanning, author/local metadata separation, and incremental SQLite persistence.
+1. Phase 4: implement the virtualized Mods list/card UI, query controls, selection, favorites, and mod details over the Phase 3 commands.
 2. Collect anonymized international game layouts and representative EFMI mod fixtures before Phase 5/6.
 3. Identify an authoritative CN/global game-version source without parsing stale logs.
 4. Decide the repository license before accepting external source redistribution or contributions.

@@ -61,6 +61,20 @@ mod tests {
         .await?;
 
         assert_eq!(profile_name, "默认配置");
+
+        let modified_at_columns: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('mod_files') WHERE name = 'modified_at'",
+        )
+        .fetch_one(database.pool())
+        .await?;
+        let tags_json_columns: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('mod_local_metadata') WHERE name = 'tags_json'",
+        )
+        .fetch_one(database.pool())
+        .await?;
+
+        assert_eq!(modified_at_columns, 1);
+        assert_eq!(tags_json_columns, 1);
         Ok(())
     }
 }

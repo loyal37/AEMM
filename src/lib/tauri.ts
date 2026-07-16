@@ -6,6 +6,9 @@ import type {
   GameLaunchMode,
   GameLaunchResult,
   GameStatus,
+  LocalModMetadata,
+  ModListItem,
+  ModScanResult,
 } from "../types/app";
 
 const previewSettings: AppSettings = {
@@ -114,4 +117,24 @@ export function commandErrorMessage(error: unknown): string {
     }
   }
   return "操作失败，请检查本地日志。";
+}
+
+export async function scanModRepository(): Promise<ModScanResult> {
+  requireDesktop();
+  return invoke<ModScanResult>("scan_mod_repository");
+}
+
+export async function listInstalledMods(): Promise<ModListItem[]> {
+  if (!isTauri()) return [];
+  return invoke<ModListItem[]>("list_installed_mods");
+}
+
+export async function updateLocalModMetadata(
+  modId: string,
+  metadata: LocalModMetadata,
+): Promise<ModListItem> {
+  requireDesktop();
+  return invoke<ModListItem>("update_local_mod_metadata", {
+    request: { modId, metadata },
+  });
 }

@@ -5,21 +5,23 @@ use uuid::Uuid;
 
 use crate::{
     errors::AppError,
-    models::{AuthorModMetadata, InstalledMod, LocalModMetadata, ModFile},
+    models::{AuthorModMetadata, InstalledMod},
+};
+
+mod metadata;
+mod repository;
+mod scanner;
+
+pub use metadata::FileSystemMetadataManager;
+pub use repository::{RepositoryInitializationPolicy, RepositoryRelativePath, RepositoryRoot};
+pub use scanner::{
+    CachedModFile, FileSystemModScanner, RepositoryScan, ScanCache, ScanIssue, ScannedMod,
 };
 
 #[derive(Debug, Clone)]
 pub enum ModInstallSource {
     Archive(PathBuf),
     Directory(PathBuf),
-}
-
-#[derive(Debug, Clone)]
-pub struct ScannedMod {
-    pub root: PathBuf,
-    pub author_metadata: AuthorModMetadata,
-    pub files: Vec<ModFile>,
-    pub size_bytes: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -33,18 +35,17 @@ pub struct InstallPlan {
 
 #[async_trait]
 pub trait ModScanner: Send + Sync {
-    async fn scan_repository(&self, repository_root: &Path) -> Result<Vec<ScannedMod>, AppError>;
+    async fn scan_repository(
+        &self,
+        repository_root: RepositoryRoot,
+        cache: ScanCache,
+    ) -> Result<RepositoryScan, AppError>;
     async fn scan_candidate(&self, candidate_root: &Path) -> Result<ScannedMod, AppError>;
 }
 
 #[async_trait]
 pub trait ModMetadataManager: Send + Sync {
     async fn read_author_metadata(&self, mod_root: &Path) -> Result<AuthorModMetadata, AppError>;
-    async fn update_local_metadata(
-        &self,
-        mod_id: Uuid,
-        metadata: LocalModMetadata,
-    ) -> Result<LocalModMetadata, AppError>;
 }
 
 #[async_trait]

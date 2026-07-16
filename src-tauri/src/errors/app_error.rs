@@ -48,6 +48,15 @@ pub enum AppError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("mod repository scan failed: {0}")]
+    ModScan(String),
+
+    #[error("mod metadata is invalid: {0}")]
+    ModMetadata(String),
+
+    #[error("stored application data is inconsistent: {0}")]
+    DataIntegrity(String),
 }
 
 impl AppError {

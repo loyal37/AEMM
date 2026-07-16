@@ -16,13 +16,20 @@ pub struct InstalledMod {
     pub lifecycle_state: ModLifecycleState,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ModLifecycleState {
     Installing,
     Installed,
     Broken,
     Removing,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MetadataSourceKind {
+    ModJson,
+    Inferred,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +45,7 @@ pub struct AuthorModMetadata {
     pub website: Option<String>,
     pub preview_path: Option<PathBuf>,
     pub original_document: Option<serde_json::Value>,
+    pub source_kind: MetadataSourceKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -59,4 +67,5 @@ pub struct ModFile {
     pub size_bytes: u64,
     pub content_hash: Option<String>,
     pub file_role: String,
+    pub modified_at: i64,
 }

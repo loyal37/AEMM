@@ -27,6 +27,12 @@ impl From<AppError> for CommandError {
                 "PROCESS_LAUNCH_ERROR",
                 "无法启动所选程序，请检查文件权限和本地日志。".to_owned(),
             ),
+            AppError::ModScan(message) => ("MOD_SCAN_ERROR", message),
+            AppError::ModMetadata(message) => ("MOD_METADATA_INVALID", message),
+            AppError::DataIntegrity(_) => (
+                "DATA_INTEGRITY_ERROR",
+                "本地模组数据不一致，请检查日志并重新扫描。".to_owned(),
+            ),
             AppError::ConfigFormat(_) => (
                 "CONFIG_FORMAT_ERROR",
                 "配置文件格式无效，请检查本地日志。".to_owned(),

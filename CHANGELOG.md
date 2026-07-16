@@ -22,13 +22,21 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Persisted game/loader paths, direct and EFMI launch modes, validated directory opening, and shell-free process launch.
 - Native folder selection plus game management UI on Settings, Dashboard, and the application sidebar.
 - Phase 2 false-positive, stale-loader, persistence, and launch-containment tests.
+- Owned mod repositories with a versioned marker, canonical path types, and safe direct-child resolution.
+- Asynchronous mod inventory scanning with normalized paths, file roles, BLAKE3 hashes, content fingerprints, issue reporting, and persisted incremental Hash reuse.
+- Validated author `mod.json` parsing, original-document preservation, safe preview resolution, and deterministic inferred metadata.
+- Transactional mod/metadata/file synchronization, missing-mod lifecycle handling, local display/category/description/favorite/notes/tags overrides, and Phase 3 SQLite migration.
+- Thin mod scan/list/local-metadata commands with TypeScript DTOs and invoke clients for the upcoming Mods UI.
+- Phase 3 repository, metadata, incremental scan, database consistency, duplicate-ID, and 1,000-mod performance regression tests.
 
 ### Security
 
 - Reject unsafe relative paths, Windows reserved names, parent traversal, managed roots as deletion targets, and overlapping repository/staging roots.
 - Revalidate game and loader executables as direct children of canonical working directories immediately before launch.
 - Treat every frontend-selected path as untrusted and refuse to persist it until the matching backend adapter succeeds.
+- Refuse to adopt non-empty custom repositories without a valid AEMM ownership marker, and skip links, junctions, reparse points, non-regular entries, unsafe relative names, and escaping preview paths during scans.
 
 ### Changed
 
 - Report unknown game versions explicitly instead of presenting Unity engine or launcher application versions as the Endfield game version.
+- Preserve vanished repository records and user overrides by marking them broken instead of deleting database state during synchronization.

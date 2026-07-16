@@ -96,11 +96,27 @@ The current identity rule requires a canonical directory containing direct-child
 
 ### Mod management
 
-- `ModScanner`: scans owned repository entries and produces normalized candidates.
-- `ModMetadataManager`: reads author `mod.json`, infers missing metadata, and merges non-destructive local overrides.
+- `RepositoryRoot` / `RepositoryRelativePath`: prove repository ownership and provide canonical, contained filesystem boundaries before scanning.
+- `ModScanner`: scans owned repository entries on a blocking worker and produces normalized candidates, file inventories, BLAKE3 identities, issues, and incremental-cache metrics.
+- `ModMetadataManager`: reads author `mod.json` and infers missing metadata. The SQLite adapter stores local overrides separately and applies them only in query DTOs.
 - `ModInstaller`: coordinates staged, rollback-capable installation plans.
 - `ModManager`: query and lifecycle orchestration.
 - `ModConflictDetector`: consumes normalized deployed artifacts and specialized analyzers.
+
+Phase 3 implements the scanner path as follows:
+
+```mermaid
+flowchart LR
+  Settings["Configured repository"] --> Ownership["RepositoryRoot ownership + canonical validation"]
+  Ownership --> Cache["Load size/mtime/hash cache from SQLite"]
+  Cache --> Worker["Blocking filesystem inventory + BLAKE3"]
+  Worker --> Metadata["Read mod.json or infer metadata"]
+  Metadata --> Snapshot["Immutable RepositoryScan snapshot"]
+  Snapshot --> Transaction["Transactional ModStore synchronization"]
+  Transaction --> DTO["List/scan DTOs for Tauri commands"]
+```
+
+Only direct child directories are repository mods. The scanner never executes content and never derives deployment destinations. Top-level files, links, junctions, reparse points, non-regular files, and unsafe relative names are skipped or reported. Duplicate case-insensitive logical IDs reject the snapshot before database mutation.
 
 ### Deployment
 
@@ -128,7 +144,7 @@ Profiles store enabled mod IDs and stable load-order positions. Switching profil
 - `AuthorModMetadata`: logical mod ID, name, author, semantic version string, description, category, compatible game version, website, preview relative path, and original document.
 - `LocalModMetadata`: display-name/category/description overrides, favorite flag, notes, and tags.
 - `InstalledMod`: AEMM UUID, logical ID, repository relative path, content fingerprint, size, install/update timestamps, and lifecycle state.
-- `ModFile`: normalized relative source path, optional deployment-relative target, size, content hash, and file role.
+- `ModFile`: normalized relative source path, optional deployment-relative target, size, content hash, modification timestamp, and descriptive file role.
 - `Profile`: UUID, name, timestamps, and ordered `ProfileMod` entries.
 - `DeploymentManifest`: strategy ID, owned destination root, created entries, source fingerprints, and timestamps.
 - `Conflict`: kind, severity, participating mods, target/resource key, current winner/order, and analyzer evidence.
@@ -146,6 +162,8 @@ Initial migrations establish:
 - `deployment_records`
 
 Schema migrations are embedded and applied at startup. SQLite foreign keys and WAL mode are enabled. Machine-specific settings remain in `config.json`.
+
+Migration `0002_mod_scanning.sql` adds file modification timestamps for incremental Hash reuse, local metadata tags, and lookup/uniqueness indexes. `ModStore::synchronize` uses one transaction: it preserves stable AEMM UUIDs and local overrides, updates author/file snapshots, and marks vanished repository entries broken instead of deleting user data.
 
 ## Installation workflow
 
@@ -197,6 +215,7 @@ Logging uses daily rolling files plus debug console output. The non-blocking wri
 
 - Paths stored in the database are relative whenever possible.
 - User-selected roots are canonicalized and typed (`RepositoryRoot`, `DeploymentRoot`, `StagingRoot`) before use.
+- Custom repositories must be empty before AEMM creates its ownership marker, or must already contain a valid marker. AEMM refuses to adopt arbitrary non-empty directories.
 - All removal APIs require an owned root and a child path; roots and arbitrary absolute paths cannot be removed.
 - Installer commits prefer same-volume atomic renames; cross-volume copy uses a journal and verification.
 - Tauri capabilities and CSP remain least-privilege.

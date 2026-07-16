@@ -5,16 +5,17 @@ use crate::{
     errors::AppError,
     models::{
         AppBootstrap, AppSettings, DetectedGameInstallation, GameLaunchResult, GameStatus,
-        LaunchMode,
+        LaunchMode, LocalModMetadata, ModListItem, ModScanResult,
     },
 };
 
-use super::{AppPaths, GameService, SettingsService, logging::initialize_logging};
+use super::{AppPaths, GameService, ModService, SettingsService, logging::initialize_logging};
 
 pub struct AppServices {
     paths: AppPaths,
     settings: SettingsService,
     game: GameService,
+    mods: ModService,
     database: Database,
     _logging_guard: super::logging::LoggingGuard,
 }
@@ -37,11 +38,17 @@ impl AppServices {
         let database = Database::connect(&paths.database_file).await?;
         tracing::info!("database migrations and health check completed");
         let game = GameService::new(settings.clone());
+        let mods = ModService::new(
+            settings.clone(),
+            &database,
+            paths.repository_directory.clone(),
+        );
 
         Ok(Self {
             paths,
             settings,
             game,
+            mods,
             database,
             _logging_guard: logging_guard,
         })
@@ -106,5 +113,21 @@ impl AppServices {
 
     pub async fn launch_game(&self) -> Result<GameLaunchResult, AppError> {
         self.game.launch().await
+    }
+
+    pub async fn scan_mod_repository(&self) -> Result<ModScanResult, AppError> {
+        self.mods.scan_repository().await
+    }
+
+    pub async fn list_installed_mods(&self) -> Result<Vec<ModListItem>, AppError> {
+        self.mods.list().await
+    }
+
+    pub async fn update_local_mod_metadata(
+        &self,
+        mod_id: uuid::Uuid,
+        metadata: LocalModMetadata,
+    ) -> Result<ModListItem, AppError> {
+        self.mods.update_local_metadata(mod_id, metadata).await
     }
 }

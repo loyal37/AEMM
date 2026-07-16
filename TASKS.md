@@ -28,10 +28,12 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 3 — Mod scanning and database
 
-- [ ] Implement repository root ownership and safe path types.
-- [ ] Implement asynchronous scanner and metadata inference.
-- [ ] Persist mods, author/local metadata, files, hashes, and timestamps.
-- [ ] Add incremental scanning and 1,000+ mod performance fixtures.
+- [x] Implement repository root ownership and safe path types.
+- [x] Implement asynchronous scanner and metadata inference.
+- [x] Persist mods, author/local metadata, files, hashes, and timestamps.
+- [x] Add incremental scanning and 1,000+ mod performance fixtures.
+- [x] Add thin scan/list/local-metadata commands and typed frontend contracts.
+- [x] Run formatting, build, strict Clippy, tests, and Phase 3 security/database review.
 
 ## Phase 4 — Mods UI
 

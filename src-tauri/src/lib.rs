@@ -32,7 +32,10 @@ pub fn run() {
             commands::game_commands::set_efmi_loader_root,
             commands::game_commands::set_game_launch_mode,
             commands::game_commands::open_game_directory,
-            commands::game_commands::launch_game
+            commands::game_commands::launch_game,
+            commands::mod_commands::scan_mod_repository,
+            commands::mod_commands::list_installed_mods,
+            commands::mod_commands::update_local_mod_metadata
         ])
         .run(tauri::generate_context!());
 
