@@ -61,6 +61,9 @@ pub enum AppError {
     #[error("mod installation failed: {0}")]
     ModInstall(String),
 
+    #[error("mod deployment failed: {0}")]
+    Deployment(String),
+
     #[error("stored application data is inconsistent: {0}")]
     DataIntegrity(String),
 }

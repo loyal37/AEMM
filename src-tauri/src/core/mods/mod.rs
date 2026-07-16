@@ -21,6 +21,7 @@ pub use installer::{
     CommitReceipt, ExistingModIdentity, InstallJournalState, PendingInstall, SafeModInstaller,
 };
 pub use metadata::FileSystemMetadataManager;
+pub(crate) use repository::path_is_link_or_reparse_point;
 pub use repository::{RepositoryInitializationPolicy, RepositoryRelativePath, RepositoryRoot};
 pub use root_detector::{DetectedModRoot, detect_mod_root};
 pub use scanner::{

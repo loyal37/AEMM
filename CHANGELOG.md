@@ -38,6 +38,9 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Same-volume atomic repository commits, verified cross-volume partial copies, transactional database synchronization, rollback receipts, and startup recovery.
 - Desktop import UX with native archive/folder pickers, window drag-and-drop, progress, warnings/blockers, confirmation, completion, and rollback-aware error handling.
 - Phase 5 tests for real ZIP/7z/RAR decoding, Zip Slip, 7z traversal, ZIP symlinks, archive quotas, duplicate IDs, rollback, and interrupted installation recovery.
+- EFMI copy deployment strategy with disabled-prefix staging, BLAKE3 verification, manifest ownership, atomic activation/revoke, and startup reconciliation.
+- Active Profile persistence, transactional deployment records, single/batch enable-disable, Mods/detail switches, enabled filters, F10 refresh guidance, and Dashboard counts.
+- Optional external-package compatibility harness, validated with the checksum-pinned RabbitFX v2.2 EFMI package without redistributing or executing it.
 
 ### Security
 
@@ -50,6 +53,8 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Reject absolute/UNC/device/archive-parent paths, Windows control/reserved names, case-insensitive file/ancestor collisions, links/reparse points, encrypted or multipart packages, ZIP overlapping data, excessive expansion, and out-of-policy output sizes before installation.
 - Never pass archive entry paths to native extraction destinations: all installed files are created through AEMM-controlled `create_new` paths inside marker-owned staging.
 - Revalidate the staged fingerprint, logical ID, file count, size, duplicate state, journal ownership, and empty final destination immediately before commit; never overwrite existing repository content.
+- Require a verified EFMI `Mods`/`DISABLED*` policy, create deployment files without overwrite, and keep partial/revoke directories excluded from loader discovery.
+- Refuse deployment cleanup on marker/root/inventory/Hash mismatch, links or extra paths; delete only manifest-listed files and expected empty parents instead of recursive directory contents.
 
 ### Changed
 

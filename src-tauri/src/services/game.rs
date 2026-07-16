@@ -168,6 +168,27 @@ impl GameService {
             .installation_root)
     }
 
+    pub async fn validated_efmi_root(&self) -> Result<PathBuf, AppError> {
+        let settings = self.settings.get().await;
+        let installation = self.require_valid_installation(&settings).await?;
+        let loader_root = settings.game.loader_root.as_deref().ok_or_else(|| {
+            AppError::NotAvailable("请先在设置中配置 EFMI 加载器目录。".to_owned())
+        })?;
+        let validation = self
+            .efmi_adapter
+            .validate(loader_root, &installation.executable)
+            .await?;
+        if !validation.valid {
+            return Err(AppError::LoaderValidation(first_issue(
+                &validation.issues,
+                "已保存的 EFMI 目录不再有效，请重新配置。",
+            )));
+        }
+        validation.root.ok_or_else(|| {
+            AppError::DataIntegrity("EFMI 校验成功但未返回规范化根目录。".to_owned())
+        })
+    }
+
     pub async fn resolve_launch_spec(&self) -> Result<LaunchSpec, AppError> {
         let settings = self.settings.get().await;
         self.resolve_launch_spec_for(&settings).await

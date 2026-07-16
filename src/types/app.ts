@@ -115,6 +115,7 @@ export interface ModListItem {
   category: string | null;
   previewPath: string | null;
   favorite: boolean;
+  enabled: boolean;
   sizeBytes: number;
   fileCount: number;
   installedAt: number;
@@ -160,6 +161,14 @@ export interface ModDetails {
 
 export interface ModMutationResult {
   updated: number;
+}
+
+export interface ModDeploymentMutationResult {
+  updated: number;
+  enabled: boolean;
+  profileId: string;
+  guidance: string | null;
+  warnings: string[];
 }
 
 export interface ModPreview {

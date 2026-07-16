@@ -155,6 +155,21 @@ The browser-preview adapter supplies deterministic fixtures only when Tauri is a
 
 Every deployment records a manifest of created paths, source content identity, strategy, and previous state. Revoke only removes paths recorded by that manifest and revalidates containment before each destructive action.
 
+Phase 6 adds `EfmiCopyDeploymentStrategy` (`efmi.copy.v1`) without changing the repository boundary. The adapter accepts only a revalidated EFMI root whose `d3dx.ini` proves recursive `Mods` loading and the `DISABLED*` exclusion convention. It then uses the loader convention as a filesystem transaction primitive:
+
+```mermaid
+flowchart LR
+  Repo["Repository mod"] --> Pending["DISABLED_AEMM_PENDING_*"]
+  Pending -->|"copy + size/Hash/manifest verify"| Active["AEMM_<mod UUID>"]
+  Active -->|"begin revoke: atomic rename"| Tombstone["DISABLED_AEMM_REVOKE_*"]
+  Tombstone -->|"SQLite commit succeeded"| Delete["manifest-only cleanup"]
+  Tombstone -->|"SQLite commit failed"| Active
+```
+
+All destination files are created without overwrite. Active deployment and revoke directories carry `.aemm-deployment.json`, containing the deployment/profile/mod IDs, source fingerprint, destination root and directory, and every relative file's size/BLAKE3 hash. Verify/revoke requires the database JSON, marker JSON, current root, and exact live inventory to agree. Cleanup removes only paths named by the manifest and then empty expected parents; it never recursively deletes a mutable directory snapshot.
+
+`DeploymentService` owns the batch transaction and operation lock. It rolls back already-copied mods when any later batch member fails, persists deployment records and active Profile flags together, rolls back filesystem state when SQLite fails, and defers only marker-verified disabled cleanup to startup recovery. Migration `0003_deployment_state.sql` stores the active Profile reference and adds deployment/profile indexes.
+
 ### Profiles
 
 Profiles store enabled mod IDs and stable load-order positions. Switching profiles computes a reconciliation plan:

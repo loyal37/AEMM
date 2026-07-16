@@ -7,6 +7,7 @@ import {
   Files,
   FolderOpen,
   HardDrive,
+  Power,
   Heart,
   LoaderCircle,
   Save,
@@ -19,6 +20,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
+import { useGameStatus } from "../features/game/useGameManager";
 import {
   formatFileSize,
   formatTimestamp,
@@ -29,6 +31,7 @@ import {
   useModDetails,
   useOpenModDirectory,
   useSetModFavorite,
+  useSetModsEnabled,
   useUpdateLocalModMetadata,
 } from "../features/mods/useModManager";
 import { VirtualModFileList } from "../features/mods/VirtualModFileList";
@@ -39,9 +42,12 @@ export function ModDetailPage() {
   const { modId } = useParams();
   const bootstrap = useAppBootstrap();
   const details = useModDetails(modId);
+  const gameStatus = useGameStatus();
   const favorite = useSetModFavorite();
+  const deployment = useSetModsEnabled();
   const openDirectory = useOpenModDirectory();
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
+  const deploymentAvailable = desktopReady && gameStatus.data?.loader?.valid === true;
 
   if (details.isPending) {
     return (
@@ -108,6 +114,26 @@ export function ModDetailPage() {
           </div>
           <div className="mod-detail-hero__actions">
             <button
+              className={item.enabled ? "button button--secondary" : "button button--primary"}
+              type="button"
+              disabled={
+                item.lifecycleState !== "installed" ||
+                !deploymentAvailable ||
+                deployment.isPending
+              }
+              title={!deploymentAvailable ? "请先配置有效的 EFMI 加载器" : undefined}
+              onClick={() =>
+                deployment.mutate({ modIds: [item.id], enabled: !item.enabled })
+              }
+            >
+              <Power size={16} />
+              {deployment.isPending
+                ? "正在同步…"
+                : item.enabled
+                  ? "禁用模组"
+                  : "启用模组"}
+            </button>
+            <button
               className="button button--secondary"
               type="button"
               disabled={favorite.isPending}
@@ -127,10 +153,15 @@ export function ModDetailPage() {
               <FolderOpen size={16} /> 打开所在目录
             </button>
           </div>
-          {favorite.isError || openDirectory.isError ? (
+          {favorite.isError || openDirectory.isError || deployment.isError ? (
             <p className="inline-error">
-              {commandErrorMessage(favorite.error ?? openDirectory.error)}
+              {commandErrorMessage(
+                favorite.error ?? openDirectory.error ?? deployment.error,
+              )}
             </p>
+          ) : null}
+          {deployment.isSuccess && deployment.data.guidance ? (
+            <p className="inline-success">{deployment.data.guidance}</p>
           ) : null}
         </div>
       </section>

@@ -5,6 +5,8 @@ import {
   Heart,
   List,
   LoaderCircle,
+  Power,
+  PowerOff,
   RefreshCw,
   Search,
   Star,
@@ -15,6 +17,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "rea
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
+import { useGameStatus } from "../features/game/useGameManager";
 import {
   applyModQuery,
   defaultModFilters,
@@ -26,6 +29,7 @@ import {
   useInstalledMods,
   useScanMods,
   useSetModFavorite,
+  useSetModsEnabled,
 } from "../features/mods/useModManager";
 import { VirtualModBrowser } from "../features/mods/VirtualModBrowser";
 import { ImportModDialog } from "../features/mods/ImportModDialog";
@@ -34,8 +38,10 @@ import { commandErrorMessage } from "../lib/tauri";
 export function ModsPage() {
   const bootstrap = useAppBootstrap();
   const mods = useInstalledMods();
+  const gameStatus = useGameStatus();
   const scan = useScanMods();
   const favorite = useSetModFavorite();
+  const deployment = useSetModsEnabled();
   const [viewMode, setViewMode] = useState<ModViewMode>("grid");
   const [filters, setFilters] = useState<ModFilters>(defaultModFilters);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -48,6 +54,7 @@ export function ModsPage() {
     [allMods, deferredQuery, filters],
   );
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
+  const deploymentAvailable = desktopReady && gameStatus.data?.loader?.valid === true;
   const openImport = useCallback(() => setImportOpen(true), []);
   const closeImport = useCallback(() => setImportOpen(false), []);
 
@@ -117,10 +124,23 @@ export function ModsPage() {
           {scan.data.updated} 个，复用 {scan.data.reusedHashes} 个文件 Hash。
         </p>
       ) : null}
-      {scan.isError || mods.isError || favorite.isError ? (
+      {scan.isError || mods.isError || favorite.isError || deployment.isError ? (
         <p className="inline-error">
-          {commandErrorMessage(scan.error ?? mods.error ?? favorite.error)}
+          {commandErrorMessage(
+            scan.error ?? mods.error ?? favorite.error ?? deployment.error,
+          )}
         </p>
+      ) : null}
+      {deployment.isSuccess && deployment.data.updated > 0 ? (
+        <div className="deployment-feedback" role="status">
+          <strong>
+            已{deployment.data.enabled ? "启用" : "禁用"} {deployment.data.updated} 个模组
+          </strong>
+          {deployment.data.guidance ? <span>{deployment.data.guidance}</span> : null}
+          {deployment.data.warnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
       ) : null}
 
       <section className="mod-controls" aria-label="模组筛选和排序">
@@ -185,6 +205,22 @@ export function ModsPage() {
             <option value="size">文件大小</option>
           </select>
         </label>
+        <label className="compact-select">
+          <span className="sr-only">按启用状态筛选</span>
+          <select
+            value={filters.deployment}
+            onChange={(event) =>
+              updateFilter(
+                "deployment",
+                event.target.value as ModFilters["deployment"],
+              )
+            }
+          >
+            <option value="all">全部启用状态</option>
+            <option value="enabled">已启用</option>
+            <option value="disabled">已禁用</option>
+          </select>
+        </label>
         <button
           className={`filter-toggle${filters.favoritesOnly ? " is-active" : ""}`}
           type="button"
@@ -231,9 +267,31 @@ export function ModsPage() {
           <span>已选择 {selectedIds.size} 个模组</span>
           <div>
             <button
+              className="button button--primary"
+              type="button"
+              disabled={!deploymentAvailable || deployment.isPending}
+              title={!deploymentAvailable ? "请先配置有效的 EFMI 加载器" : undefined}
+              onClick={() =>
+                deployment.mutate({ modIds: [...selectedIds], enabled: true })
+              }
+            >
+              <Power size={15} /> 批量启用
+            </button>
+            <button
               className="button button--secondary"
               type="button"
-              disabled={favorite.isPending}
+              disabled={!deploymentAvailable || deployment.isPending}
+              title={!deploymentAvailable ? "请先配置有效的 EFMI 加载器" : undefined}
+              onClick={() =>
+                deployment.mutate({ modIds: [...selectedIds], enabled: false })
+              }
+            >
+              <PowerOff size={15} /> 批量禁用
+            </button>
+            <button
+              className="button button--secondary"
+              type="button"
+              disabled={favorite.isPending || deployment.isPending}
               onClick={() =>
                 favorite.mutate({ modIds: [...selectedIds], favorite: true })
               }
@@ -243,7 +301,7 @@ export function ModsPage() {
             <button
               className="button button--ghost"
               type="button"
-              disabled={favorite.isPending}
+              disabled={favorite.isPending || deployment.isPending}
               onClick={() =>
                 favorite.mutate({ modIds: [...selectedIds], favorite: false })
               }
@@ -275,9 +333,14 @@ export function ModsPage() {
           viewMode={viewMode}
           selectedIds={selectedIds}
           favoritePending={favorite.isPending}
+          deploymentPending={deployment.isPending}
+          deploymentAvailable={deploymentAvailable}
           onToggleSelected={toggleSelected}
           onFavorite={(item) =>
             favorite.mutate({ modIds: [item.id], favorite: !item.favorite })
+          }
+          onSetEnabled={(item) =>
+            deployment.mutate({ modIds: [item.id], enabled: !item.enabled })
           }
         />
       ) : (

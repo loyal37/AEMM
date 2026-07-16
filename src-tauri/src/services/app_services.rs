@@ -6,18 +6,22 @@ use crate::{
     errors::AppError,
     models::{
         AppBootstrap, AppSettings, DetectedGameInstallation, GameLaunchResult, GameStatus,
-        LaunchMode, LocalModMetadata, ModDetails, ModImportPlan, ModInstallResult, ModListItem,
-        ModMutationResult, ModPreview, ModScanResult,
+        LaunchMode, LocalModMetadata, ModDeploymentMutationResult, ModDetails, ModImportPlan,
+        ModInstallResult, ModListItem, ModMutationResult, ModPreview, ModScanResult,
     },
 };
 
-use super::{AppPaths, GameService, ModService, SettingsService, logging::initialize_logging};
+use super::{
+    AppPaths, DeploymentService, GameService, ModService, SettingsService,
+    logging::initialize_logging,
+};
 
 pub struct AppServices {
     paths: AppPaths,
     settings: SettingsService,
     game: GameService,
     mods: ModService,
+    deployment: DeploymentService,
     database: Database,
     _logging_guard: super::logging::LoggingGuard,
 }
@@ -49,12 +53,31 @@ impl AppServices {
         if let Err(error) = mods.recover_pending_installations().await {
             tracing::error!(error = %error, diagnostic = ?error, "mod installation recovery could not complete during startup");
         }
+        let deployment = DeploymentService::new(
+            settings.clone(),
+            &database,
+            paths.repository_directory.clone(),
+        );
+        match game.validated_efmi_root().await {
+            Ok(efmi_root) => {
+                if let Err(error) = deployment.recover_pending(efmi_root).await {
+                    tracing::error!(error = %error, diagnostic = ?error, "EFMI deployment recovery could not complete during startup");
+                }
+            }
+            Err(AppError::NotAvailable(_)) => {
+                tracing::debug!("EFMI deployment recovery skipped because no loader is configured");
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, diagnostic = ?error, "EFMI deployment recovery deferred until loader configuration is valid");
+            }
+        }
 
         Ok(Self {
             paths,
             settings,
             game,
             mods,
+            deployment,
             database,
             _logging_guard: logging_guard,
         })
@@ -159,6 +182,17 @@ impl AppServices {
         favorite: bool,
     ) -> Result<ModMutationResult, AppError> {
         self.mods.set_favorite(mod_ids, favorite).await
+    }
+
+    pub async fn set_mods_enabled(
+        &self,
+        mod_ids: Vec<uuid::Uuid>,
+        enabled: bool,
+    ) -> Result<ModDeploymentMutationResult, AppError> {
+        let efmi_root = self.game.validated_efmi_root().await?;
+        self.deployment
+            .set_enabled(efmi_root, mod_ids, enabled)
+            .await
     }
 
     pub async fn mod_preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {

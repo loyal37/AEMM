@@ -18,6 +18,7 @@ pub struct ModListItem {
     pub category: Option<String>,
     pub preview_path: Option<PathBuf>,
     pub favorite: bool,
+    pub enabled: bool,
     pub size_bytes: u64,
     pub file_count: u64,
     pub installed_at: i64,
@@ -59,6 +60,23 @@ pub struct SetModFavorite {
 #[serde(rename_all = "camelCase")]
 pub struct ModMutationResult {
     pub updated: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModDeploymentMutationResult {
+    pub updated: u64,
+    pub enabled: bool,
+    pub profile_id: Uuid,
+    pub guidance: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetModsEnabled {
+    pub mod_ids: Vec<Uuid>,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

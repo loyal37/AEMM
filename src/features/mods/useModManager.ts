@@ -9,6 +9,7 @@ import {
   prepareModImport,
   scanModRepository,
   setModFavorite,
+  setModsEnabled,
   updateLocalModMetadata,
 } from "../../lib/tauri";
 import type { LocalModMetadata, ModDetails, ModListItem } from "../../types/app";
@@ -94,6 +95,32 @@ export function useSetModFavorite() {
               }
             : details,
         );
+      }
+    },
+  });
+}
+
+export function useSetModsEnabled() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ modIds, enabled }: { modIds: string[]; enabled: boolean }) =>
+      setModsEnabled(modIds, enabled),
+    onSuccess: (result, variables) => {
+      const ids = new Set(variables.modIds);
+      queryClient.setQueryData<ModListItem[]>(MOD_LIST_KEY, (items) =>
+        items?.map((item) =>
+          ids.has(item.id) ? { ...item, enabled: variables.enabled } : item,
+        ),
+      );
+      for (const modId of variables.modIds) {
+        queryClient.setQueryData<ModDetails>(modDetailsKey(modId), (details) =>
+          details
+            ? { ...details, item: { ...details.item, enabled: variables.enabled } }
+            : details,
+        );
+      }
+      if (result.updated !== variables.modIds.length) {
+        void queryClient.invalidateQueries({ queryKey: ["mods"] });
       }
     },
   });

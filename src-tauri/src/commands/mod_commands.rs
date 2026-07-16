@@ -5,9 +5,9 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     errors::{CommandError, CommandResult},
     models::{
-        ModDetails, ModImportOperation, ModImportPlan, ModInstallProgress, ModInstallResult,
-        ModListItem, ModMutationResult, ModPreview, ModScanResult, PrepareModImport,
-        SetModFavorite, UpdateLocalModMetadata,
+        ModDeploymentMutationResult, ModDetails, ModImportOperation, ModImportPlan,
+        ModInstallProgress, ModInstallResult, ModListItem, ModMutationResult, ModPreview,
+        ModScanResult, PrepareModImport, SetModFavorite, SetModsEnabled, UpdateLocalModMetadata,
     },
     services::AppServices,
 };
@@ -93,6 +93,17 @@ pub async fn set_mod_favorite(
 ) -> CommandResult<ModMutationResult> {
     services
         .set_mod_favorite(request.mod_ids, request.favorite)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn set_mods_enabled(
+    request: SetModsEnabled,
+    services: State<'_, AppServices>,
+) -> CommandResult<ModDeploymentMutationResult> {
+    services
+        .set_mods_enabled(request.mod_ids, request.enabled)
         .await
         .map_err(CommandError::from)
 }

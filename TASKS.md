@@ -54,9 +54,10 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 6 — Enable and disable
 
-- [ ] Validate deployment behavior with real EFMI mods.
-- [ ] Implement at least one safe deployment strategy and manifest-backed revoke.
-- [ ] Implement batch enable/disable and loader refresh guidance.
+- [x] Validate the supplied real EFMI loader policy, official EFMI Tools export guidance, and a checksum-verified public EFMI package without executing content.
+- [x] Implement `efmi.copy.v1` with disabled staging, create-new copy, Hash verification, ownership manifests, atomic activation, transactional revoke, and startup recovery.
+- [x] Implement safe single/256-item batch enable-disable, active-Profile persistence, list/detail controls, enabled filtering/counts, and F10 loader-refresh guidance.
+- [x] Add modified/extra-file refusal, batch rollback, database-state, interrupted-revoke, and opt-in real-package compatibility tests.
 
 ## Phase 7 — Conflict detection
 

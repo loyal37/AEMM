@@ -12,7 +12,9 @@ pub use app::{
     StorageSettings, ThemePreference,
 };
 pub use conflict::{Conflict, ConflictKind, ConflictSeverity};
-pub use deployment::{DeploymentContext, DeploymentEntry, DeploymentManifest, DeploymentPlan};
+pub use deployment::{
+    DeploymentContext, DeploymentEntry, DeploymentManifest, DeploymentPlan, DeploymentRevokeReceipt,
+};
 pub use game::{
     DetectedGameInstallation, EfmiValidation, GameDiscoverySource, GameEdition, GameInstallation,
     GameLaunchResult, GameStatus, GameValidation, GameVersionInfo, LaunchSpec,
@@ -26,7 +28,7 @@ pub use mod_install::{
     ModInstallProgressStage, ModInstallResult, PrepareModImport,
 };
 pub use mod_scan::{
-    ModDetails, ModFileDetails, ModListItem, ModMutationResult, ModPreview, ModScanResult,
-    SetModFavorite, UpdateLocalModMetadata,
+    ModDeploymentMutationResult, ModDetails, ModFileDetails, ModListItem, ModMutationResult,
+    ModPreview, ModScanResult, SetModFavorite, SetModsEnabled, UpdateLocalModMetadata,
 };
 pub use profile::{Profile, ProfileMod};

@@ -2,8 +2,12 @@ use async_trait::async_trait;
 
 use crate::{
     errors::AppError,
-    models::{DeploymentContext, DeploymentManifest, DeploymentPlan},
+    models::{DeploymentContext, DeploymentManifest, DeploymentPlan, DeploymentRevokeReceipt},
 };
+
+mod efmi_copy;
+
+pub use efmi_copy::{EFMI_COPY_STRATEGY_ID, EfmiCopyDeploymentStrategy};
 
 #[async_trait]
 pub trait ModDeploymentStrategy: Send + Sync {
@@ -19,7 +23,16 @@ pub trait ModDeploymentStrategy: Send + Sync {
 
     async fn plan_revoke(&self, manifest: &DeploymentManifest) -> Result<DeploymentPlan, AppError>;
 
-    async fn revoke(&self, manifest: &DeploymentManifest) -> Result<(), AppError>;
+    async fn begin_revoke(
+        &self,
+        manifest: &DeploymentManifest,
+    ) -> Result<DeploymentRevokeReceipt, AppError>;
+
+    async fn finalize_revoke(&self, receipt: &DeploymentRevokeReceipt) -> Result<(), AppError>;
+
+    async fn rollback_revoke(&self, receipt: &DeploymentRevokeReceipt) -> Result<(), AppError>;
+
+    async fn rollback_deploy(&self, manifest: &DeploymentManifest) -> Result<(), AppError>;
 
     async fn verify(&self, manifest: &DeploymentManifest) -> Result<(), AppError>;
 }

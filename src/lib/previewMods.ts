@@ -39,6 +39,7 @@ function baseMods(): ModListItem[] {
       category,
       previewPath: "preview.png",
       favorite: favoriteOverrides.get(id) ?? index % 5 === 0,
+      enabled: index % 4 === 1,
       sizeBytes: 2_400_000 + index * 731_113,
       fileCount: 8 + (index % 27),
       installedAt: 1_752_000_000 - index * 86_400,

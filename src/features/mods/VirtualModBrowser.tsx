@@ -16,8 +16,11 @@ interface VirtualModBrowserProps {
   viewMode: ModViewMode;
   selectedIds: Set<string>;
   favoritePending: boolean;
+  deploymentPending: boolean;
+  deploymentAvailable: boolean;
   onToggleSelected: (modId: string) => void;
   onFavorite: (item: ModListItem) => void;
+  onSetEnabled: (item: ModListItem) => void;
 }
 
 export function VirtualModBrowser({
@@ -25,8 +28,11 @@ export function VirtualModBrowser({
   viewMode,
   selectedIds,
   favoritePending,
+  deploymentPending,
+  deploymentAvailable,
   onToggleSelected,
   onFavorite,
+  onSetEnabled,
 }: VirtualModBrowserProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
@@ -100,8 +106,11 @@ export function VirtualModBrowser({
                     key={item.id}
                     selected={selectedIds.has(item.id)}
                     favoritePending={favoritePending}
+                    deploymentPending={deploymentPending}
+                    deploymentAvailable={deploymentAvailable}
                     onToggleSelected={onToggleSelected}
                     onFavorite={onFavorite}
+                    onSetEnabled={onSetEnabled}
                   />
                 ) : (
                   <ModListRow
@@ -109,8 +118,11 @@ export function VirtualModBrowser({
                     key={item.id}
                     selected={selectedIds.has(item.id)}
                     favoritePending={favoritePending}
+                    deploymentPending={deploymentPending}
+                    deploymentAvailable={deploymentAvailable}
                     onToggleSelected={onToggleSelected}
                     onFavorite={onFavorite}
+                    onSetEnabled={onSetEnabled}
                   />
                 ),
               )}
@@ -126,16 +138,22 @@ interface ModEntryProps {
   item: ModListItem;
   selected: boolean;
   favoritePending: boolean;
+  deploymentPending: boolean;
+  deploymentAvailable: boolean;
   onToggleSelected: (modId: string) => void;
   onFavorite: (item: ModListItem) => void;
+  onSetEnabled: (item: ModListItem) => void;
 }
 
 function ModCard({
   item,
   selected,
   favoritePending,
+  deploymentPending,
+  deploymentAvailable,
   onToggleSelected,
   onFavorite,
+  onSetEnabled,
 }: ModEntryProps) {
   return (
     <article className={`mod-card${selected ? " is-selected" : ""}`}>
@@ -174,7 +192,16 @@ function ModCard({
             <Link to={`/mods/${item.id}`}>{item.name}</Link>
             <span>{item.author ?? "未知作者"}</span>
           </div>
-          <LifecycleBadge state={item.lifecycleState} />
+          {item.lifecycleState === "installed" ? (
+            <DeploymentToggle
+              item={item}
+              pending={deploymentPending}
+              available={deploymentAvailable}
+              onToggle={onSetEnabled}
+            />
+          ) : (
+            <LifecycleBadge state={item.lifecycleState} />
+          )}
         </div>
         <div className="mod-card__tags">
           <span>{item.category ?? "未分类"}</span>
@@ -195,8 +222,11 @@ function ModListRow({
   item,
   selected,
   favoritePending,
+  deploymentPending,
+  deploymentAvailable,
   onToggleSelected,
   onFavorite,
+  onSetEnabled,
 }: ModEntryProps) {
   return (
     <article className={`mod-list-row${selected ? " is-selected" : ""}`}>
@@ -226,7 +256,16 @@ function ModListRow({
       <span className="mod-list-row__muted">{item.category ?? "未分类"}</span>
       <span className="mod-list-row__muted">{formatFileSize(item.sizeBytes)}</span>
       <span className="mod-list-row__muted">{formatTimestamp(item.updatedAt)}</span>
-      <LifecycleBadge state={item.lifecycleState} />
+      {item.lifecycleState === "installed" ? (
+        <DeploymentToggle
+          item={item}
+          pending={deploymentPending}
+          available={deploymentAvailable}
+          onToggle={onSetEnabled}
+        />
+      ) : (
+        <LifecycleBadge state={item.lifecycleState} />
+      )}
       <button
         className={`favorite-button favorite-button--inline${item.favorite ? " is-active" : ""}`}
         type="button"
@@ -238,6 +277,34 @@ function ModListRow({
         <Heart size={16} fill={item.favorite ? "currentColor" : "none"} />
       </button>
     </article>
+  );
+}
+
+function DeploymentToggle({
+  item,
+  pending,
+  available,
+  onToggle,
+}: {
+  item: ModListItem;
+  pending: boolean;
+  available: boolean;
+  onToggle: (item: ModListItem) => void;
+}) {
+  return (
+    <button
+      className={`mod-enable-switch${item.enabled ? " is-enabled" : ""}`}
+      type="button"
+      role="switch"
+      aria-checked={item.enabled}
+      aria-label={`${item.enabled ? "禁用" : "启用"} ${item.name}`}
+      title={!available ? "请先在设置中配置有效的 EFMI 加载器" : undefined}
+      disabled={!available || pending}
+      onClick={() => onToggle(item)}
+    >
+      <span aria-hidden="true" />
+      <strong>{item.enabled ? "已启用" : "已禁用"}</strong>
+    </button>
   );
 }
 

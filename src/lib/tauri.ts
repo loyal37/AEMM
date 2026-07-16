@@ -9,6 +9,7 @@ import type {
   GameStatus,
   LocalModMetadata,
   ModDetails,
+  ModDeploymentMutationResult,
   ModImportPlan,
   ModInstallResult,
   ModListItem,
@@ -203,6 +204,16 @@ export async function setModFavorite(
   }
   return invoke<ModMutationResult>("set_mod_favorite", {
     request: { modIds, favorite },
+  });
+}
+
+export async function setModsEnabled(
+  modIds: string[],
+  enabled: boolean,
+): Promise<ModDeploymentMutationResult> {
+  requireDesktop();
+  return invoke<ModDeploymentMutationResult>("set_mods_enabled", {
+    request: { modIds, enabled },
   });
 }
 

@@ -307,6 +307,12 @@ impl ModStore {
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
                 a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                EXISTS(
+                    SELECT 1 FROM app_state s
+                    JOIN profile_mods pm
+                      ON pm.profile_id = s.active_profile_id AND pm.mod_id = m.id
+                    WHERE s.singleton = 1 AND pm.enabled = 1
+                ) AS enabled,
                 COUNT(f.id) AS file_count
              FROM mods m
              JOIN mod_author_metadata a ON a.mod_id = m.id
@@ -377,6 +383,12 @@ impl ModStore {
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
                 a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                EXISTS(
+                    SELECT 1 FROM app_state s
+                    JOIN profile_mods pm
+                      ON pm.profile_id = s.active_profile_id AND pm.mod_id = m.id
+                    WHERE s.singleton = 1 AND pm.enabled = 1
+                ) AS enabled,
                 COUNT(f.id) AS file_count
              FROM mods m
              JOIN mod_author_metadata a ON a.mod_id = m.id
@@ -405,6 +417,12 @@ impl ModStore {
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
                 a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                EXISTS(
+                    SELECT 1 FROM app_state s
+                    JOIN profile_mods pm
+                      ON pm.profile_id = s.active_profile_id AND pm.mod_id = m.id
+                    WHERE s.singleton = 1 AND pm.enabled = 1
+                ) AS enabled,
                 COUNT(f.id) AS file_count,
                 a.name AS author_name, a.description AS author_description,
                 a.category AS author_category, a.game_version, a.website, a.source_kind,
@@ -547,6 +565,12 @@ impl ModStore {
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
                 a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                EXISTS(
+                    SELECT 1 FROM app_state s
+                    JOIN profile_mods pm
+                      ON pm.profile_id = s.active_profile_id AND pm.mod_id = m.id
+                    WHERE s.singleton = 1 AND pm.enabled = 1
+                ) AS enabled,
                 COUNT(f.id) AS file_count
              FROM mods m
              JOIN mod_author_metadata a ON a.mod_id = m.id
@@ -580,6 +604,7 @@ fn row_to_list_item(row: &sqlx::sqlite::SqliteRow) -> Result<ModListItem, AppErr
             .try_get::<Option<String>, _>("preview_path")?
             .map(PathBuf::from),
         favorite: row.try_get::<i64, _>("favorite")? != 0,
+        enabled: row.try_get::<i64, _>("enabled")? != 0,
         size_bytes: non_negative_u64(row.try_get("size_bytes")?, "size_bytes")?,
         file_count: non_negative_u64(row.try_get("file_count")?, "file_count")?,
         installed_at: row.try_get("installed_at")?,

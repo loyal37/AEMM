@@ -14,7 +14,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Current implementation status
 
-- Phase 1 foundation through Phase 5 safe mod import/installation are implemented and validated locally on Windows 11.
+- Phase 1 foundation through Phase 6 safe EFMI deployment/enable-disable are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -75,6 +75,16 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - A desktop import dialog with archive/folder pickers, Tauri drag-and-drop, staged progress, plan/warning/blocker review, confirmation, rollback-aware error handling, and live Mods cache refresh.
 - Forty-eight passing Rust tests, including real ZIP/7z/RAR decoding, Zip Slip and 7z traversal rejection, ZIP symlink rejection, quotas, duplicate blocking, rollback, and interrupted-install recovery.
 
+### Phase 6 delivered
+
+- A concrete `efmi.copy.v1` implementation behind `ModDeploymentStrategy`. It validates the current EFMI root and requires the observed `include_recursive = Mods` plus `exclude_recursive = DISABLED*` policy before mutating anything.
+- Copy deployment through a unique `DISABLED_AEMM_PENDING_*` directory, `create_new` writes, live BLAKE3/size verification, an ownership marker, exact manifest inventory verification, and one atomic rename to `AEMM_<mod UUID>` only after the copy is complete.
+- Manifest-backed disable through an atomic rename to `DISABLED_AEMM_REVOKE_*`. SQLite is updated while the deployment is safely excluded; cleanup occurs only after commit, and a database failure renames it back.
+- Startup reconciliation for interrupted pending copies and revokes. Database-committed deployments are restored/verified, while database-orphaned AEMM-owned directories are cleaned only after marker and inventory validation.
+- Strict revoke behavior: files changed after deployment, extra files/directories, links, junctions, marker mismatches, or a different EFMI root stop deletion and preserve the directory for inspection.
+- Active-profile state in migration `0003_deployment_state.sql`, transactional deployment records/profile flags, safe single and 256-item batch enable/disable, enabled filters/switches, detail actions, F10 guidance, and live Dashboard counts.
+- Fifty-five default Rust tests plus an opt-in compatibility harness. A checksum-verified public [EFMI RabbitFX](https://gamebanana.com/mods/651557) v2.2 package (`GameBanana file 1721477`, MD5 `a13b3c546a8ffbc94e20c9b6b8c5c6fd`) passed real ZIP staging, root detection, EFMI deployment, verification, revoke, and cleanup without executing any content; the downloaded copy was removed afterward.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -97,6 +107,10 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 18. Archive entry names are never trusted as output paths. ZIP and folder content is written with `create_new`, 7z's helper destination argument is ignored, and RAR content is read under a per-file bound before writing to a validated AEMM path.
 19. Manifest-less imports use `local.<content-fingerprint-prefix>` as their internal logical ID so staging/wrapper directory names cannot make identity unstable.
 20. Prepared plans are abandoned on restart because no UI owns their confirmation anymore. Interrupted commits are preserved only when SQLite proves the same repository path and fingerprint was committed; otherwise recovery verifies the fingerprint and rolls back.
+21. Phase 6's first concrete strategy copies one repository mod into a stable, isolated `AEMM_<UUID>` child under the verified EFMI `Mods` root. Shared deployment interfaces remain strategy-neutral; no EFMI path convention leaks into the repository or scanner.
+22. EFMI's verified `DISABLED*` exclusion is the transaction boundary: work-in-progress copies and revoke tombstones are never visible as active mods. The database is never allowed to authorize deletion by itself; the on-disk ownership marker and exact file inventory must also agree.
+23. Deployment lists are immutable Hash/size manifests. AEMM refuses automatic revoke when deployed content has been changed or augmented, and removal enumerates only manifest paths so a raced-in extra path is never recursively deleted.
+24. The singleton `app_state.active_profile_id` is introduced before full Profile UI so Phase 6 never hard-codes the default Profile in queries or deployment services. Phase 8 will reuse this state for reconciliation.
 
 ## EFMI observations (read-only, 2026-07-15)
 
@@ -121,7 +135,7 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - 3DMigoto conflict semantics can involve INI section names, hashes, resources, and command lists—not only identical relative file paths. The first conflict engine must therefore support analyzer plugins.
 - EFMI recursive include/load ordering is not yet verified. AEMM must not claim deterministic load priority until this is tested against real mods and the loader.
 - Symlink/junction support, required privileges, anti-cheat implications, and loader compatibility need safe empirical validation.
-- No representative real-world mod archives were present in the supplied EFMI folder. Phase 5 format adapters are covered with generated ZIP/7z fixtures and an upstream RAR extraction vector, but root heuristics still need validation against actual community packages.
+- No representative mod archives were present in the supplied EFMI folder. A public RabbitFX v2.2 package has since validated the real archive/root/deploy/revoke path, but a representative EFMI Tools-generated character model package with Meshes/Textures is still needed before finalizing resource-level conflict semantics.
 - Phase 3 does not infer EFMI deployment targets or loader priority from scanned files. File roles are descriptive only until real mod fixtures establish adapter-specific semantics.
 - Manual edits that create duplicate case-insensitive author IDs cause the scan transaction to fail with an actionable metadata error, preserving the previously consistent database state.
 - Phase 4 does not expose an enable switch or claim conflict results because deployment/profile state and verified conflict semantics belong to Phases 6 and 7.
@@ -129,7 +143,7 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 
 ## Next plan
 
-1. Phase 6: validate EFMI deployment behavior with representative mods, implement a manifest-backed deployment strategy, and expose safe single/batch enable and disable operations.
-2. Collect anonymized international game layouts and representative EFMI mod fixtures before finalizing Phase 6/7 semantics.
+1. Phase 7: implement target-path and EFMI INI/resource analyzers, conflict persistence/UI, and only the load-order semantics proven by loader fixtures.
+2. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
 3. Identify an authoritative CN/global game-version source without parsing stale logs.
 4. Decide the repository license before accepting external source redistribution or contributions.

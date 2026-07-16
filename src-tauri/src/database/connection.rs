@@ -75,6 +75,12 @@ mod tests {
 
         assert_eq!(modified_at_columns, 1);
         assert_eq!(tags_json_columns, 1);
+
+        let active_profile_id: String =
+            sqlx::query_scalar("SELECT active_profile_id FROM app_state WHERE singleton = 1")
+                .fetch_one(database.pool())
+                .await?;
+        assert_eq!(active_profile_id, "00000000-0000-0000-0000-000000000001");
         Ok(())
     }
 }

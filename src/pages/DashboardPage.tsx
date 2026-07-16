@@ -41,7 +41,17 @@ export function DashboardPage() {
       icon: Boxes,
       tone: "violet",
     },
-    { label: "已启用", value: "—", hint: "Phase 6 接入部署状态", icon: CheckCircle2, tone: "green" },
+    {
+      label: "已启用",
+      value: mods.isPending
+        ? "—"
+        : String(installedMods.filter((item) => item.enabled).length),
+      hint: gameStatus.data?.loader?.valid
+        ? "EFMI 清单部署状态"
+        : "配置 EFMI 后可安全启停",
+      icon: CheckCircle2,
+      tone: "green",
+    },
     { label: "检测到冲突", value: "—", hint: "Phase 7 接入分析结果", icon: AlertTriangle, tone: "amber" },
   ];
 

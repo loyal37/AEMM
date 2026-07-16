@@ -7,6 +7,7 @@ export interface ModFilters {
   query: string;
   category: string;
   lifecycle: "all" | ModLifecycleState;
+  deployment: "all" | "enabled" | "disabled";
   favoritesOnly: boolean;
   sort: ModSort;
 }
@@ -15,6 +16,7 @@ export const defaultModFilters: ModFilters = {
   query: "",
   category: "all",
   lifecycle: "all",
+  deployment: "all",
   favoritesOnly: false,
   sort: "updated",
 };
@@ -40,6 +42,8 @@ export function applyModQuery(mods: ModListItem[], filters: ModFilters): ModList
     .filter((item) => {
       if (filters.category !== "all" && item.category !== filters.category) return false;
       if (filters.lifecycle !== "all" && item.lifecycleState !== filters.lifecycle) return false;
+      if (filters.deployment === "enabled" && !item.enabled) return false;
+      if (filters.deployment === "disabled" && item.enabled) return false;
       if (filters.favoritesOnly && !item.favorite) return false;
       if (!query) return true;
       return [item.name, item.author, item.category, item.logicalId, item.description]
