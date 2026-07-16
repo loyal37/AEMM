@@ -74,6 +74,26 @@ The webview never receives unrestricted filesystem primitives. Commands expose n
 
 An `EfmiGameAdapter` can wrap an Endfield adapter with loader-specific validation and launch behavior. CN/global variants become separate adapter configurations or implementations.
 
+Phase 2 implements this boundary as three layers:
+
+- `EndfieldAdapter`: discovers candidates and validates product identity. It does not know UI state or mutate settings.
+- `EfmiAdapter`: validates loader structure and `d3dx.ini`, with `valid` separated from `launch_ready` so a stale launch path cannot be executed accidentally.
+- `GameService`: coordinates settings, adapters, launch modes, and process spawning. It exposes only validated roots/specifications to Tauri commands.
+
+```mermaid
+flowchart LR
+  Registry["Launcher registry / known roots"] --> Endfield["EndfieldAdapter"]
+  Manual["Native directory selection"] --> Endfield
+  Endfield --> Validation["Canonical identity validation"]
+  Validation --> Settings["Atomic config persistence"]
+  Settings --> Service["GameService status"]
+  EFMI["EfmiAdapter"] --> Service
+  Service --> Spec["Revalidated LaunchSpec"]
+  Spec --> Process["Direct process spawn (no shell)"]
+```
+
+The current identity rule requires a canonical directory containing direct-child `Endfield.exe`, `UnityPlayer.dll`, and `GameAssembly.dll`, plus `Endfield_Data/app.info` with the exact `Hypergryph` / `Endfield` identity. The adapter intentionally reports an unknown game version until an authoritative version source is confirmed.
+
 ### Mod management
 
 - `ModScanner`: scans owned repository entries and produces normalized candidates.
@@ -180,3 +200,5 @@ Logging uses daily rolling files plus debug console output. The non-blocking wri
 - All removal APIs require an owned root and a child path; roots and arbitrary absolute paths cannot be removed.
 - Installer commits prefer same-volume atomic renames; cross-volume copy uses a journal and verification.
 - Tauri capabilities and CSP remain least-privilege.
+- Frontend directory selection has only `dialog:allow-open`; selected paths are still treated as untrusted and must pass backend adapter validation before persistence or use.
+- Open-directory and launch commands never accept arbitrary executable paths. They resolve saved settings through `GameService`, canonicalize again immediately before use, and launch without a command shell.

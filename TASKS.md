@@ -19,11 +19,12 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 2 — Game path management
 
-- [ ] Define verified CN/global Endfield installation fixtures and version sources.
-- [ ] Implement `GameAdapter` discovery and validation.
-- [ ] Implement EFMI loader adapter and configurable launch modes.
-- [ ] Add automatic detection, manual folder selection, path persistence, version display, open-directory, and launch UI.
-- [ ] Add tests for false-positive paths and unsafe executable resolution.
+- [x] Define verified CN identity markers; explicitly retain international layout and authoritative game-version sources as open adaptation work.
+- [x] Implement `GameAdapter` registry/known-root discovery and canonical validation.
+- [x] Implement EFMI loader adapter, stale-launch detection, and configurable direct/EFMI launch modes.
+- [x] Add automatic detection, manual folder selection, path persistence, honest version status, open-directory, and launch UI.
+- [x] Add tests for false-positive paths, spoofed identity, stale loader configuration, and unsafe executable resolution.
+- [x] Run formatting, build, Clippy, tests, desktop startup smoke test, security review, and visual browser-preview review.
 
 ## Phase 3 — Mod scanning and database
 
