@@ -35,5 +35,5 @@ pub use mod_scan::{
 };
 pub use profile::{
     CopyProfile, CreateProfile, Profile, ProfileMod, ProfileOperation, ProfileSwitchResult,
-    RenameProfile,
+    RenameProfile, ReorderProfileMods,
 };

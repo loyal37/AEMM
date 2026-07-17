@@ -6,21 +6,23 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { NavLink } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useGameStatus } from "../../features/game/useGameManager";
 
 const navigation = [
-  { to: "/", label: "首页", icon: LayoutDashboard, end: true },
-  { to: "/mods", label: "模组", icon: Boxes },
-  { to: "/profiles", label: "配置方案", icon: SlidersHorizontal },
-  { to: "/settings", label: "设置", icon: Settings },
+  { to: "/", label: "navigation.dashboard", icon: LayoutDashboard, end: true },
+  { to: "/mods", label: "navigation.mods", icon: Boxes },
+  { to: "/profiles", label: "navigation.profiles", icon: SlidersHorizontal },
+  { to: "/settings", label: "navigation.settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const gameStatus = useGameStatus();
+  const { t } = useTranslation();
   const configured = gameStatus.data?.configured === true;
 
   return (
-    <aside className="sidebar" aria-label="主导航">
+    <aside className="sidebar" aria-label={t("navigation.label")}>
       <div className="brand">
         <div className="brand-mark" aria-hidden="true">
           <Gamepad2 size={22} strokeWidth={1.8} />
@@ -40,18 +42,18 @@ export function Sidebar() {
             className={({ isActive }) => `nav-item${isActive ? " is-active" : ""}`}
           >
             <Icon size={19} strokeWidth={1.8} />
-            <span>{label}</span>
+            <span>{t(label)}</span>
           </NavLink>
         ))}
       </nav>
 
       <div className="sidebar-footer">
-        <span className="eyebrow">当前游戏</span>
+        <span className="eyebrow">{t("navigation.currentGame")}</span>
         <div className="game-chip">
           <span className={`status-dot ${configured ? "status-dot--ready" : "status-dot--idle"}`} />
           <div>
-            <strong>明日方舟：终末地</strong>
-            <span>{configured ? "游戏目录已验证" : "等待设置路径"}</span>
+            <strong>{t("navigation.gameName")}</strong>
+            <span>{configured ? t("navigation.configured") : t("navigation.waiting")}</span>
           </div>
         </div>
       </div>

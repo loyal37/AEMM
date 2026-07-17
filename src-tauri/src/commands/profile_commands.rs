@@ -4,6 +4,7 @@ use crate::{
     errors::{CommandError, CommandResult},
     models::{
         CopyProfile, CreateProfile, Profile, ProfileOperation, ProfileSwitchResult, RenameProfile,
+        ReorderProfileMods,
     },
     services::AppServices,
 };
@@ -53,6 +54,17 @@ pub async fn delete_profile(
 ) -> CommandResult<()> {
     services
         .delete_profile(request.profile_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn reorder_profile_mods(
+    request: ReorderProfileMods,
+    services: State<'_, AppServices>,
+) -> CommandResult<Profile> {
+    services
+        .reorder_profile_mods(request.profile_id, request.mod_ids)
         .await
         .map_err(CommandError::from)
 }

@@ -4,6 +4,7 @@ import {
   Clock3,
   Copy,
   Layers3,
+  ListOrdered,
   LoaderCircle,
   PackageCheck,
   Pencil,
@@ -14,12 +15,14 @@ import {
 import { useState, type FormEvent } from "react";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
+import { LoadOrderDialog } from "../features/profiles/LoadOrderDialog";
 import { formatTimestamp } from "../features/mods/modQuery";
 import {
   useCopyProfile,
   useCreateProfile,
   useDeleteProfile,
   useProfiles,
+  useReorderProfileMods,
   useRenameProfile,
   useSwitchProfile,
 } from "../features/profiles/useProfiles";
@@ -37,7 +40,9 @@ export function ProfilesPage() {
   const copy = useCopyProfile();
   const remove = useDeleteProfile();
   const switchProfile = useSwitchProfile();
+  const reorder = useReorderProfileMods();
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [orderProfile, setOrderProfile] = useState<Profile | null>(null);
   const [name, setName] = useState("");
   const items = profiles.data ?? [];
   const active = items.find((profile) => profile.isActive);
@@ -46,7 +51,8 @@ export function ProfilesPage() {
     rename.isPending ||
     copy.isPending ||
     remove.isPending ||
-    switchProfile.isPending;
+    switchProfile.isPending ||
+    reorder.isPending;
 
   const openEditor = (state: EditorState) => {
     create.reset();
@@ -224,6 +230,19 @@ export function ProfilesPage() {
                   <button
                     className="icon-button profile-action"
                     type="button"
+                    aria-label={`调整 ${profile.name} 的加载顺序`}
+                    title={enabled.length > 1 ? "调整加载顺序" : "至少需要两个启用模组"}
+                    disabled={enabled.length < 2 || mutationPending}
+                    onClick={() => {
+                      reorder.reset();
+                      setOrderProfile(profile);
+                    }}
+                  >
+                    <ListOrdered size={15} />
+                  </button>
+                  <button
+                    className="icon-button profile-action"
+                    type="button"
                     aria-label={`复制 ${profile.name}`}
                     title="复制 Profile"
                     disabled={mutationPending}
@@ -332,6 +351,23 @@ export function ProfilesPage() {
             </div>
           </form>
         </div>
+      ) : null}
+
+      {orderProfile ? (
+        <LoadOrderDialog
+          profile={orderProfile}
+          pending={reorder.isPending}
+          error={reorder.error}
+          onClose={() => setOrderProfile(null)}
+          onSave={async (modIds) => {
+            try {
+              await reorder.mutateAsync({ profileId: orderProfile.id, modIds });
+              setOrderProfile(null);
+            } catch {
+              // The dialog renders the backend validation error.
+            }
+          }}
+        />
       ) : null}
 
       {active ? (

@@ -49,6 +49,12 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Rollback-capable full-set Profile switching through EFMI revoke tombstones, target fingerprint deployment, and one SQLite activity/manifest commit.
 - Profiles workspace, top-bar quick switch, Dashboard active Profile, mutation feedback, and deterministic browser-preview interactions.
 
+- Persisted dark/system theme, locale, log level, and restartable onboarding preferences with live system color-scheme response.
+- i18next/react-i18next shell and onboarding localization, with English feature pages explicitly retained as Preview work.
+- Skip navigation, visible keyboard focus, reduced-motion support, and delayed global query/mutation progress feedback.
+- Pointer and keyboard Profile order editing with accessible move controls and transactional exact-membership persistence.
+- Route-level feature code splitting that removes the initial Vite large-chunk warning.
+
 ### Security
 
 - Reject unsafe relative paths, Windows reserved names, parent traversal, managed roots as deletion targets, and overlapping repository/staging roots.
@@ -64,6 +70,8 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Refuse deployment cleanup on marker/root/inventory/Hash mismatch, links or extra paths; delete only manifest-listed files and expected empty parents instead of recursive directory contents.
 - Canonicalize and contain every deployed INI read, reject links/reparse components, require the on-disk AEMM marker to match SQLite, and cap conflict parsing at 4 MiB per file, 256 files per mod, and 64 MiB per report.
 - Protect the active Profile from deletion, forbid deployment records on inactive Profiles, and re-check switch snapshots inside the final database transaction.
+
+- Refuse path-bearing game or storage changes through the generic preferences command; dedicated validated workflows remain the only path mutation boundary.
 
 ### Changed
 

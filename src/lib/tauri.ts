@@ -34,13 +34,15 @@ import {
   deletePreviewProfile,
   getPreviewProfiles,
   renamePreviewProfile,
+  reorderPreviewProfile,
   switchPreviewProfile,
 } from "./previewProfiles";
 
-const previewSettings: AppSettings = {
+let previewSettings: AppSettings = {
   schemaVersion: 1,
   language: "zh-CN",
   theme: "dark",
+  onboardingCompleted: true,
   game: {
     adapterId: "endfield.local",
     edition: null,
@@ -77,6 +79,10 @@ export async function getAppBootstrap(): Promise<AppBootstrap> {
 }
 
 export async function updateSettings(settings: AppSettings): Promise<AppSettings> {
+  if (!isTauri()) {
+    previewSettings = structuredClone(settings);
+    return structuredClone(previewSettings);
+  }
   return invoke<AppSettings>("update_settings", { settings });
 }
 
@@ -225,6 +231,11 @@ export async function copyProfile(sourceProfileId: string, name: string): Promis
 export async function deleteProfile(profileId: string): Promise<void> {
   if (!isTauri()) return deletePreviewProfile(profileId);
   return invoke<void>("delete_profile", { request: { profileId } });
+}
+
+export async function reorderProfileMods(profileId: string, modIds: string[]): Promise<Profile> {
+  if (!isTauri()) return reorderPreviewProfile(profileId, modIds);
+  return invoke<Profile>("reorder_profile_mods", { request: { profileId, modIds } });
 }
 
 export async function switchProfile(profileId: string): Promise<ProfileSwitchResult> {

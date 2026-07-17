@@ -220,6 +220,16 @@ flowchart LR
 
 `ProfileService`, `DeploymentService`, and `ConflictService` share the deployment operation lock. `ProfileStore` additionally checks active IDs, desired memberships, and manifest equality inside its own transactions. Empty-to-empty switches can commit without a loader; any filesystem reconciliation requires a freshly validated EFMI root resolved by `GameService`.
 
+### Application experience and preferences
+
+`ExperienceController` is the presentation-side boundary for persisted locale/theme behavior. It applies the saved language, resolves the system color scheme without touching business state, and keeps the document language synchronized for assistive technology and locale-aware formatting. `GlobalActivityIndicator` observes TanStack Query activity after a short delay so long operations are visible without flashing for cached reads.
+
+The onboarding dialog writes only `onboarding_completed`. Theme, language, log level, and onboarding state share the validated settings DTO, but `AppServices::update_settings` refuses changes to the `game` and `storage` sections. Those path-bearing values remain reachable only through dedicated game/repository workflows with canonical validation.
+
+Feature routes are lazy-loaded at the router boundary. Shared shell/bootstrap code stays in the initial chunk, while Dashboard, Mods, details, Profiles, and Settings are loaded on demand.
+
+Profile order editing uses dnd-kit sensors in the webview and submits an ordered UUID list. `ProfileStore::reorder_enabled` treats that list as an exact permutation of current enabled membership, rejects missing/duplicate/foreign IDs, preserves disabled membership, and rewrites unique load-order positions in one SQLite transaction.
+
 ## Core data model
 
 ### Domain entities

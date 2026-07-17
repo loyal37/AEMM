@@ -92,7 +92,7 @@ export function formatFileSize(bytes: number): string {
 
 export function formatTimestamp(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "未知";
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(document.documentElement.lang || "zh-CN", {
     year: "numeric",
     month: "short",
     day: "numeric",

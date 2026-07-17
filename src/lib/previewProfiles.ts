@@ -122,6 +122,31 @@ export function deletePreviewProfile(profileId: string): void {
   profiles = profiles.filter((item) => item.id !== profileId);
 }
 
+export function reorderPreviewProfile(profileId: string, modIds: string[]): Profile {
+  const profile = requireProfile(profileId);
+  const enabled = profile.mods.filter((item) => item.enabled);
+  if (
+    enabled.length !== modIds.length ||
+    new Set(enabled.map((item) => item.modId)).size !== new Set(modIds).size ||
+    modIds.some((modId) => !enabled.some((item) => item.modId === modId))
+  ) {
+    throw new Error("加载顺序必须包含该 Profile 的全部启用模组。");
+  }
+  const slots = enabled.map((item) => item.loadOrder).sort((left, right) => left - right);
+  const positions = new Map(modIds.map((modId, index) => [modId, slots[index] ?? index]));
+  profile.mods = profile.mods
+    .map((item) =>
+      item.enabled ? { ...item, loadOrder: positions.get(item.modId) ?? item.loadOrder } : item,
+    )
+    .sort((left, right) => left.loadOrder - right.loadOrder);
+  profile.updatedAt = Math.floor(Date.now() / 1000);
+  return {
+    ...profile,
+    isActive: profileId === activeProfileId,
+    mods: profile.mods.map((item) => ({ ...item })),
+  };
+}
+
 export function switchPreviewProfile(profileId: string): ProfileSwitchResult {
   const source = requireProfile(activeProfileId);
   const target = requireProfile(profileId);

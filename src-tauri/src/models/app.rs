@@ -10,6 +10,8 @@ pub struct AppSettings {
     pub schema_version: u32,
     pub language: String,
     pub theme: ThemePreference,
+    #[serde(default)]
+    pub onboarding_completed: bool,
     pub game: GameSettings,
     pub storage: StorageSettings,
     pub log_level: LogLevel,
@@ -21,6 +23,7 @@ impl AppSettings {
             schema_version: CONFIG_SCHEMA_VERSION,
             language: "zh-CN".to_owned(),
             theme: ThemePreference::Dark,
+            onboarding_completed: false,
             game: GameSettings::default(),
             storage: StorageSettings {
                 repository_path,
@@ -108,4 +111,30 @@ pub struct AppBootstrap {
     pub database_path: PathBuf,
     pub log_directory: PathBuf,
     pub settings: AppSettings,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::AppSettings;
+
+    #[test]
+    fn legacy_settings_default_onboarding_to_incomplete() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let settings = AppSettings::defaults(
+            PathBuf::from("C:/aemm/repository"),
+            PathBuf::from("C:/aemm/staging"),
+        );
+        let mut value = serde_json::to_value(settings)?;
+        let object = value
+            .as_object_mut()
+            .ok_or("serialized settings must be an object")?;
+        object.remove("onboardingCompleted");
+
+        let restored: AppSettings = serde_json::from_value(value)?;
+
+        assert!(!restored.onboarding_completed);
+        Ok(())
+    }
 }

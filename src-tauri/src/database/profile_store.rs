@@ -1,4 +1,7 @@
-use std::{collections::HashMap, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    time::SystemTime,
+};
 
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
@@ -185,6 +188,109 @@ impl ProfileStore {
         }
         transaction.commit().await?;
         Ok(())
+    }
+
+    pub async fn reorder_enabled(
+        &self,
+        profile_id: Uuid,
+        ordered_mod_ids: &[Uuid],
+    ) -> Result<Profile, AppError> {
+        const MAX_REORDERED_MODS: usize = 2_000;
+        if ordered_mod_ids.len() > MAX_REORDERED_MODS {
+            return Err(AppError::Profile(format!(
+                "单个 Profile 最多调整 {MAX_REORDERED_MODS} 个启用模组。"
+            )));
+        }
+        let requested = ordered_mod_ids.iter().copied().collect::<HashSet<_>>();
+        if requested.len() != ordered_mod_ids.len() {
+            return Err(AppError::Profile("加载顺序包含重复模组。".to_owned()));
+        }
+
+        let now = unix_timestamp_seconds()?;
+        let mut transaction = self.pool.begin().await?;
+        ensure_profile_exists(&mut transaction, profile_id).await?;
+        let rows = sqlx::query(
+            "SELECT mod_id, enabled, load_order FROM profile_mods
+             WHERE profile_id = ? ORDER BY load_order, mod_id",
+        )
+        .bind(profile_id.to_string())
+        .fetch_all(&mut *transaction)
+        .await?;
+        let mut all = Vec::with_capacity(rows.len());
+        let mut enabled_ids = Vec::new();
+        let mut enabled_slots = Vec::new();
+        let mut maximum_order = 0_i64;
+        for row in rows {
+            let mod_id = parse_uuid(&row.try_get::<String, _>("mod_id")?, "mod")?;
+            let enabled = row.try_get::<i64, _>("enabled")? == 1;
+            let load_order: i64 = row.try_get("load_order")?;
+            maximum_order = maximum_order.max(load_order);
+            if enabled {
+                enabled_ids.push(mod_id);
+                enabled_slots.push(load_order);
+            }
+            all.push((mod_id, enabled, load_order));
+        }
+        if enabled_ids.len() != ordered_mod_ids.len()
+            || enabled_ids.iter().copied().collect::<HashSet<_>>() != requested
+        {
+            return Err(AppError::Profile(
+                "提交的加载顺序必须恰好包含该 Profile 当前全部启用模组。".to_owned(),
+            ));
+        }
+        if enabled_ids == ordered_mod_ids {
+            transaction.commit().await?;
+            return self.get(profile_id).await;
+        }
+
+        let offset = maximum_order
+            .checked_add(i64::try_from(all.len()).map_err(|_| {
+                AppError::DataIntegrity("Profile 模组数量超出 SQLite 支持范围。".to_owned())
+            })?)
+            .and_then(|value| value.checked_add(1))
+            .ok_or_else(|| {
+                AppError::DataIntegrity("Profile 临时加载顺序超出支持范围。".to_owned())
+            })?;
+        sqlx::query("UPDATE profile_mods SET load_order = load_order + ? WHERE profile_id = ?")
+            .bind(offset)
+            .bind(profile_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+
+        let enabled_positions = ordered_mod_ids
+            .iter()
+            .copied()
+            .zip(enabled_slots)
+            .collect::<HashMap<_, _>>();
+        for (mod_id, enabled, original_order) in all {
+            let load_order = if enabled {
+                enabled_positions.get(&mod_id).copied().ok_or_else(|| {
+                    AppError::DataIntegrity("加载顺序映射缺少启用模组。".to_owned())
+                })?
+            } else {
+                original_order
+            };
+            let updated = sqlx::query(
+                "UPDATE profile_mods SET load_order = ? WHERE profile_id = ? AND mod_id = ?",
+            )
+            .bind(load_order)
+            .bind(profile_id.to_string())
+            .bind(mod_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(AppError::DataIntegrity(
+                    "更新 Profile 加载顺序时记录发生变化。".to_owned(),
+                ));
+            }
+        }
+        sqlx::query("UPDATE profiles SET updated_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(profile_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        self.get(profile_id).await
     }
 
     pub async fn prepare_switch(
@@ -534,6 +640,60 @@ mod tests {
         assert!(store.delete(active.id).await.is_err());
         store.delete(copied_id).await?;
         assert!(store.get(copied_id).await.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reorders_exact_enabled_membership_without_changing_state()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let database = Database::connect(&directory.path().join("mods.db")).await?;
+        let store = ProfileStore::new(database.pool().clone());
+        let profile_id = Uuid::new_v4();
+        store.create(profile_id, "Order fixture").await?;
+        let mod_ids = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+        for (index, mod_id) in mod_ids.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO mods
+                    (id, logical_id, repository_path, content_fingerprint, size_bytes,
+                     installed_at, updated_at, lifecycle_state)
+                 VALUES (?, ?, ?, 'fingerprint', 1, 1, 1, 'installed')",
+            )
+            .bind(mod_id.to_string())
+            .bind(format!("fixture.mod.{index}"))
+            .bind(format!("fixture-{index}"))
+            .execute(database.pool())
+            .await?;
+            sqlx::query(
+                "INSERT INTO profile_mods (profile_id, mod_id, enabled, load_order)
+                 VALUES (?, ?, 1, ?)",
+            )
+            .bind(profile_id.to_string())
+            .bind(mod_id.to_string())
+            .bind(i64::try_from(index)?)
+            .execute(database.pool())
+            .await?;
+        }
+
+        let requested = [mod_ids[2], mod_ids[0], mod_ids[1]];
+        let profile = store.reorder_enabled(profile_id, &requested).await?;
+
+        assert_eq!(
+            profile
+                .mods
+                .iter()
+                .filter(|item| item.enabled)
+                .map(|item| item.mod_id)
+                .collect::<Vec<_>>(),
+            requested
+        );
+        assert!(profile.mods.iter().all(|item| item.enabled));
+        assert!(
+            store
+                .reorder_enabled(profile_id, &requested[..2])
+                .await
+                .is_err()
+        );
         Ok(())
     }
 }

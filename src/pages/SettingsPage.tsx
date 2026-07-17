@@ -15,7 +15,11 @@ import {
 } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { PageHeader } from "../components/ui/PageHeader";
-import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
+import {
+  useAppBootstrap,
+  useUpdateAppSettings,
+} from "../features/bootstrap/useAppBootstrap";
+import { useOnboarding } from "../features/experience/AppExperience";
 import {
   useDetectGameInstallations,
   useGameStatus,
@@ -25,7 +29,12 @@ import {
   useSetGameLaunchMode,
 } from "../features/game/useGameManager";
 import { commandErrorMessage } from "../lib/tauri";
-import type { DetectedGameInstallation, GameEdition, GameLaunchMode } from "../types/app";
+import type {
+  AppSettings,
+  DetectedGameInstallation,
+  GameEdition,
+  GameLaunchMode,
+} from "../types/app";
 
 function displayPath(value: string | null | undefined) {
   return value && value.length > 0 ? value : "尚未设置";
@@ -55,6 +64,8 @@ export function SettingsPage() {
   const configureLoader = useSetEfmiLoaderRoot();
   const setLaunchMode = useSetGameLaunchMode();
   const openDirectory = useOpenGameDirectory();
+  const updatePreferences = useUpdateAppSettings();
+  const onboarding = useOnboarding();
 
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const settings = bootstrap.data?.settings;
@@ -64,14 +75,21 @@ export function SettingsPage() {
     detect.isPending ||
     configureGame.isPending ||
     configureLoader.isPending ||
-    setLaunchMode.isPending;
+    setLaunchMode.isPending ||
+    updatePreferences.isPending;
   const operationError =
     configureGame.error ??
     configureLoader.error ??
     setLaunchMode.error ??
     detect.error ??
     openDirectory.error ??
+    updatePreferences.error ??
     gameStatus.error;
+
+  function updatePreference(patch: Partial<AppSettings>) {
+    if (!settings) return;
+    updatePreferences.mutate({ ...settings, ...patch });
+  }
 
   async function chooseDirectory(title: string) {
     if (!desktopReady) return null;
@@ -296,8 +314,20 @@ export function SettingsPage() {
           </div>
           <div className="setting-card__body">
             <span className="eyebrow">外观</span>
-            <h2>深色主题</h2>
-            <p>为桌面大列表和长时间使用优化。</p>
+            <h2>界面主题</h2>
+            <p>深色模式固定使用 AEMM 配色；跟随系统会响应 Windows 明暗设置。</p>
+            <select
+              className="select-field preference-select"
+              aria-label="界面主题"
+              value={settings?.theme ?? "dark"}
+              disabled={!settings || updatePreferences.isPending}
+              onChange={(event) =>
+                updatePreference({ theme: event.target.value as AppSettings["theme"] })
+              }
+            >
+              <option value="dark">深色</option>
+              <option value="system">跟随系统</option>
+            </select>
           </div>
         </article>
 
@@ -307,8 +337,18 @@ export function SettingsPage() {
           </div>
           <div className="setting-card__body">
             <span className="eyebrow">语言</span>
-            <h2>{settings?.language ?? "zh-CN"}</h2>
-            <p>本地化框架将在 Phase 9 接入。</p>
+            <h2>界面语言</h2>
+            <p>应用框架、导航和首次引导已本地化；英语业务页面仍在持续补齐。</p>
+            <select
+              className="select-field preference-select"
+              aria-label="界面语言"
+              value={settings?.language ?? "zh-CN"}
+              disabled={!settings || updatePreferences.isPending}
+              onChange={(event) => updatePreference({ language: event.target.value })}
+            >
+              <option value="zh-CN">简体中文</option>
+              <option value="en-US">English (Preview)</option>
+            </select>
           </div>
         </article>
 
@@ -329,9 +369,44 @@ export function SettingsPage() {
           </div>
           <div className="setting-card__body">
             <span className="eyebrow">日志</span>
-            <h2>{settings?.logLevel ?? "info"}</h2>
+            <h2>日志级别</h2>
             <p className="path-value">{displayPath(bootstrap.data?.logDirectory)}</p>
+            <select
+              className="select-field preference-select"
+              aria-label="日志级别"
+              value={settings?.logLevel ?? "info"}
+              disabled={!settings || updatePreferences.isPending}
+              onChange={(event) =>
+                updatePreference({ logLevel: event.target.value as AppSettings["logLevel"] })
+              }
+            >
+              <option value="error">error</option>
+              <option value="warn">warn</option>
+              <option value="info">info</option>
+              <option value="debug">debug</option>
+              <option value="trace">trace</option>
+            </select>
+            <small className="preference-note">新的日志过滤级别将在下次启动后完整生效。</small>
           </div>
+        </article>
+
+        <article className="setting-card setting-card--wide onboarding-setting">
+          <div className="setting-card__icon">
+            <CheckCircle2 size={20} />
+          </div>
+          <div className="setting-card__body">
+            <span className="eyebrow">首次使用</span>
+            <h2>安全工作流引导</h2>
+            <p>重新查看仓库、EFMI 部署和 Profile 回滚机制说明。</p>
+          </div>
+          <button
+            className="button button--secondary"
+            type="button"
+            disabled={!settings || updatePreferences.isPending}
+            onClick={onboarding.open}
+          >
+            重新查看引导
+          </button>
         </article>
       </section>
 

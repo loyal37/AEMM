@@ -50,6 +50,7 @@ pub fn run() {
             commands::profile_commands::rename_profile,
             commands::profile_commands::copy_profile,
             commands::profile_commands::delete_profile,
+            commands::profile_commands::reorder_profile_mods,
             commands::profile_commands::switch_profile
         ])
         .run(tauri::generate_context!());

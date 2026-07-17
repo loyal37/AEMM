@@ -14,7 +14,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Current implementation status
 
-- Phase 1 foundation through Phase 8 Profile management are implemented and validated locally on Windows 11.
+- Phase 1 foundation through Phase 9 UX completion are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -106,6 +106,15 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - A complete Profiles workspace with active status, enabled counts, saved order previews, create/copy/rename/delete controls, switch progress/results/warnings, a live top-bar selector, Dashboard active-Profile state, and deterministic browser-preview behavior.
 - Sixty-five default Rust tests pass, including CRUD protections, full two-way Profile reconciliation, rollback after an invalid target mod, and loader-free empty switching. Browser interaction/visual checks at 1440×1000 and 960×800 reported no page errors or horizontal overflow.
 
+### Phase 9 delivered
+
+- Persisted dark/system theme, Chinese/English interface preference, log-level preference, and a restartable three-step onboarding flow. System theme follows live Windows color-scheme changes.
+- An i18next/react-i18next application-shell boundary for navigation, top-bar, accessibility labels, and onboarding. English is deliberately marked Preview because feature-page copy is not yet fully translated.
+- Keyboard-focusable skip navigation, visible focus treatment, reduced-motion handling, delayed global query/mutation activity feedback, and responsive light/dark styling.
+- Pointer and keyboard Profile load-order editing through dnd-kit, with explicit up/down controls as an accessible alternative. The backend accepts only an exact permutation of the Profile's enabled mod IDs and commits positions transactionally.
+- Route-level lazy loading for all feature pages. The initial production JavaScript chunk dropped from roughly 553 kB to 348 kB before gzip, removing the Vite large-chunk warning.
+- Sixty-eight default Rust tests pass, including legacy preference deserialization, supported-locale validation, and exact Profile-order membership. Browser interaction/visual checks covered theme, locale, onboarding, keyboard drag-and-drop, skip navigation, and the 960x800 minimum viewport.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -139,6 +148,9 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 29. The current EFMI strategy uses the same isolated `AEMM_<mod UUID>` directory across Profiles. Phase 8 therefore quarantines the complete source set and redeploys the complete target set, including shared mods, instead of mutating ownership markers in place.
 30. Profile CRUD and deployment/conflict mutations share one async operation lock. Database transactions still re-check active IDs, names, memberships, and manifests so the lock is coordination—not the sole consistency boundary.
 
+31. General preference updates may change only presentation settings. Game and storage paths must continue through their dedicated validation services; the generic settings command rejects attempts to mutate either path-bearing section.
+32. Profile reordering is an exact-permutation operation over enabled membership. It preserves disabled rows, uses collision-free temporary positions inside one transaction, and does not claim that the saved order is an EFMI runtime winner rule.
+
 ## EFMI observations (read-only, 2026-07-15)
 
 The supplied folder appears to be an Endfield Model Importer (EFMI) / 3DMigoto layout:
@@ -168,10 +180,13 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - Preview images larger than 2 MiB or with unsupported signatures fall back to a generated placeholder. A managed thumbnail cache can be added later if real fixtures require large-source downscaling.
 - Profile switching currently redeploys the full target set because EFMI deployment directories are keyed by mod UUID and ownership markers include the Profile ID. Safe shared-deployment transfer can be optimized later only with an explicit marker/database protocol and crash fixtures.
 
+- English localization currently covers the application shell and onboarding only. Feature pages remain Chinese-first and the selector labels English as Preview.
+- Changing the persisted log filter takes full effect on the next application start because the rolling tracing subscriber is initialized once.
+
 ## Next plan
 
-1. Phase 9: complete accessibility, localization/theme behavior, onboarding, load-order editing, settings validation feedback, and long-operation UX.
-2. Phase 10: run the full security, performance, database-consistency, recovery, and public-API audit.
-3. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
-4. Identify an authoritative CN/global game-version source without parsing stale logs.
+1. Phase 10: run the full security, performance, database-consistency, recovery, public-API, and Windows packaging audit.
+2. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
+3. Identify an authoritative CN/global game-version source without parsing stale logs.
+4. Complete feature-page English localization before removing the Preview label.
 5. Decide the repository license before accepting external source redistribution or contributions.

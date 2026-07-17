@@ -5,6 +5,7 @@ import {
   deleteProfile,
   listProfiles,
   renameProfile,
+  reorderProfileMods,
   switchProfile,
 } from "../../lib/tauri";
 import { CONFLICT_REPORT_KEY } from "../conflicts/useConflictReport";
@@ -52,6 +53,20 @@ export function useCopyProfile() {
 export function useDeleteProfile() {
   const refresh = useRefreshProfiles();
   return useMutation({ mutationFn: deleteProfile, onSuccess: refresh });
+}
+
+export function useReorderProfileMods() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ profileId, modIds }: { profileId: string; modIds: string[] }) =>
+      reorderProfileMods(profileId, modIds),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: PROFILE_LIST_KEY }),
+        queryClient.invalidateQueries({ queryKey: CONFLICT_REPORT_KEY }),
+      ]);
+    },
+  });
 }
 
 export function useSwitchProfile() {

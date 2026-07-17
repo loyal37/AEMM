@@ -109,6 +109,12 @@ impl AppServices {
     }
 
     pub async fn update_settings(&self, settings: AppSettings) -> Result<AppSettings, AppError> {
+        let current = self.settings.get().await;
+        if settings.game != current.game || settings.storage != current.storage {
+            return Err(AppError::ConfigValidation(
+                "游戏与存储路径必须通过各自的验证命令修改。".to_owned(),
+            ));
+        }
         self.settings.update(settings).await
     }
 
@@ -262,6 +268,14 @@ impl AppServices {
 
     pub async fn delete_profile(&self, profile_id: uuid::Uuid) -> Result<(), AppError> {
         self.profiles.delete(profile_id).await
+    }
+
+    pub async fn reorder_profile_mods(
+        &self,
+        profile_id: uuid::Uuid,
+        mod_ids: Vec<uuid::Uuid>,
+    ) -> Result<Profile, AppError> {
+        self.profiles.reorder(profile_id, mod_ids).await
     }
 
     pub async fn switch_profile(

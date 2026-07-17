@@ -19,6 +19,7 @@ export interface AppSettings {
   schemaVersion: number;
   language: string;
   theme: ThemePreference;
+  onboardingCompleted: boolean;
   game: GameSettings;
   storage: StorageSettings;
   logLevel: "error" | "warn" | "info" | "debug" | "trace";

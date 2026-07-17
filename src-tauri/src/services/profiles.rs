@@ -65,4 +65,18 @@ impl ProfileService {
         tracing::info!(profile_id = %profile_id, "profile deleted");
         Ok(())
     }
+
+    pub async fn reorder(
+        &self,
+        profile_id: Uuid,
+        ordered_mod_ids: Vec<Uuid>,
+    ) -> Result<Profile, AppError> {
+        let _guard = self.operation_lock.lock().await;
+        let profile = self
+            .store
+            .reorder_enabled(profile_id, &ordered_mod_ids)
+            .await?;
+        tracing::info!(profile_id = %profile_id, mods = ordered_mod_ids.len(), "profile load order updated");
+        Ok(profile)
+    }
 }

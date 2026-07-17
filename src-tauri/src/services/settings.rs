@@ -106,9 +106,9 @@ fn validate_settings(settings: &AppSettings) -> Result<(), AppError> {
         )));
     }
 
-    if settings.language.trim().is_empty() || settings.language.len() > 32 {
+    if !matches!(settings.language.as_str(), "zh-CN" | "en-US") {
         return Err(AppError::ConfigValidation(
-            "语言代码不能为空且不能超过 32 个字符。".to_owned(),
+            "当前仅支持 zh-CN 和 en-US 语言代码。".to_owned(),
         ));
     }
 
@@ -328,6 +328,21 @@ mod tests {
         settings.storage.staging_path = settings.storage.repository_path.join("staging");
 
         let result = service.update(settings).await;
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_unsupported_interface_language() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let paths = AppPaths::for_test(directory.path());
+        paths.ensure_base_directories().await?;
+        let service = SettingsService::load_or_create(&paths).await?;
+        let mut settings = service.get().await;
+        settings.language = "not-a-supported-locale".to_owned();
+
+        let result = service.update(settings).await;
+
         assert!(result.is_err());
         Ok(())
     }

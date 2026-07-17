@@ -75,7 +75,10 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 9 — UX completion
 
-- [ ] Accessibility, localization, theme, settings, onboarding, and progress UX.
+- [x] Add persisted dark/system theme and supported-locale settings without exposing path mutation through the generic preferences command.
+- [x] Add shell/onboarding localization, restartable onboarding, skip navigation, focus/reduced-motion support, and global activity feedback.
+- [x] Add pointer/keyboard Profile order editing with transactional exact-membership validation.
+- [x] Split feature routes and run production build, strict Rust checks, browser interactions, and 1440/960 visual review.
 
 ## Phase 10 — Audit and optimization
 

@@ -48,6 +48,13 @@ pub struct ProfileOperation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReorderProfileMods {
+    pub profile_id: Uuid,
+    pub mod_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileSwitchResult {
     pub profile: Profile,
