@@ -12,7 +12,9 @@ use walkdir::WalkDir;
 use crate::{
     core::mods::{
         FileSystemMetadataManager, ModScanner, RepositoryRelativePath, RepositoryRoot,
-        repository::{REPOSITORY_MARKER_FILE, path_is_link_or_reparse_point},
+        repository::{
+            REMOVAL_TOMBSTONE_PREFIX, REPOSITORY_MARKER_FILE, path_is_link_or_reparse_point,
+        },
     },
     errors::AppError,
     models::{AuthorModMetadata, ModFile},
@@ -114,6 +116,10 @@ impl FileSystemModScanner {
         for entry in paths {
             let name = entry.file_name();
             if name.to_string_lossy() == REPOSITORY_MARKER_FILE {
+                continue;
+            }
+            if name.to_string_lossy().starts_with(REMOVAL_TOMBSTONE_PREFIX) {
+                skipped_entries += 1;
                 continue;
             }
             let path = entry.path();

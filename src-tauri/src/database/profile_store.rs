@@ -243,19 +243,34 @@ impl ProfileStore {
             return self.get(profile_id).await;
         }
 
-        let offset = maximum_order
-            .checked_add(i64::try_from(all.len()).map_err(|_| {
-                AppError::DataIntegrity("Profile 模组数量超出 SQLite 支持范围。".to_owned())
-            })?)
-            .and_then(|value| value.checked_add(1))
+        let temporary_base = maximum_order.checked_add(1).ok_or_else(|| {
+            AppError::DataIntegrity("Profile 临时加载顺序超出支持范围。".to_owned())
+        })?;
+        let temporary_count = i64::try_from(all.len()).map_err(|_| {
+            AppError::DataIntegrity("Profile 模组数量超出 SQLite 支持范围。".to_owned())
+        })?;
+        temporary_base
+            .checked_add(temporary_count.saturating_sub(1))
             .ok_or_else(|| {
                 AppError::DataIntegrity("Profile 临时加载顺序超出支持范围。".to_owned())
             })?;
-        sqlx::query("UPDATE profile_mods SET load_order = load_order + ? WHERE profile_id = ?")
-            .bind(offset)
+        for (index, (mod_id, _, _)) in all.iter().enumerate() {
+            let temporary_order = temporary_base
+                .checked_add(i64::try_from(index).map_err(|_| {
+                    AppError::DataIntegrity("Profile 模组数量超出 SQLite 支持范围。".to_owned())
+                })?)
+                .ok_or_else(|| {
+                    AppError::DataIntegrity("Profile 临时加载顺序超出支持范围。".to_owned())
+                })?;
+            sqlx::query(
+                "UPDATE profile_mods SET load_order = ? WHERE profile_id = ? AND mod_id = ?",
+            )
+            .bind(temporary_order)
             .bind(profile_id.to_string())
+            .bind(mod_id.to_string())
             .execute(&mut *transaction)
             .await?;
+        }
 
         let enabled_positions = ordered_mod_ids
             .iter()
@@ -694,6 +709,55 @@ mod tests {
                 .await
                 .is_err()
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_reorder_when_no_safe_temporary_range_exists()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let database = Database::connect(&directory.path().join("mods.db")).await?;
+        let store = ProfileStore::new(database.pool().clone());
+        let profile_id = Uuid::new_v4();
+        store.create(profile_id, "Overflow fixture").await?;
+        let mod_ids = [Uuid::new_v4(), Uuid::new_v4()];
+        let load_orders = [i64::MAX - 1, i64::MAX];
+        for (index, mod_id) in mod_ids.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO mods
+                    (id, logical_id, repository_path, content_fingerprint, size_bytes,
+                     installed_at, updated_at, lifecycle_state)
+                 VALUES (?, ?, ?, 'fingerprint', 1, 1, 1, 'installed')",
+            )
+            .bind(mod_id.to_string())
+            .bind(format!("overflow.mod.{index}"))
+            .bind(format!("overflow-{index}"))
+            .execute(database.pool())
+            .await?;
+            sqlx::query(
+                "INSERT INTO profile_mods (profile_id, mod_id, enabled, load_order)
+                 VALUES (?, ?, 1, ?)",
+            )
+            .bind(profile_id.to_string())
+            .bind(mod_id.to_string())
+            .bind(load_orders[index])
+            .execute(database.pool())
+            .await?;
+        }
+
+        assert!(
+            store
+                .reorder_enabled(profile_id, &[mod_ids[1], mod_ids[0]])
+                .await
+                .is_err()
+        );
+        let persisted = sqlx::query_scalar::<_, i64>(
+            "SELECT load_order FROM profile_mods WHERE profile_id = ? ORDER BY load_order",
+        )
+        .bind(profile_id.to_string())
+        .fetch_all(database.pool())
+        .await?;
+        assert_eq!(persisted, load_orders);
         Ok(())
     }
 }

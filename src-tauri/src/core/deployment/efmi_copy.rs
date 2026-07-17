@@ -186,14 +186,14 @@ impl EfmiCopyDeploymentStrategy {
         fs::rename(&active_path, &tombstone_path)
             .map_err(|source| AppError::file_system(&tombstone_path, source))?;
         if let Err(error) = validate_owned_inventory(&tombstone_path, manifest, false) {
-            if !active_path.exists() {
-                if let Err(rollback_error) = fs::rename(&tombstone_path, &active_path) {
-                    tracing::error!(
-                        path = %tombstone_path.display(),
-                        error = %rollback_error,
-                        "failed to restore deployment after revoke verification failure"
-                    );
-                }
+            if !active_path.exists()
+                && let Err(rollback_error) = fs::rename(&tombstone_path, &active_path)
+            {
+                tracing::error!(
+                    path = %tombstone_path.display(),
+                    error = %rollback_error,
+                    "failed to restore deployment after revoke verification failure"
+                );
             }
             return Err(error);
         }

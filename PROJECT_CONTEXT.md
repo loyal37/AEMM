@@ -14,7 +14,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Current implementation status
 
-- Phase 1 foundation through Phase 9 UX completion are implemented and validated locally on Windows 11.
+- Phase 1 foundation through Phase 10 audit/release hardening are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -66,7 +66,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ### Phase 5 delivered
 
-- ZIP, 7z, RAR, and folder import adapters selected against the Rust 1.85 MSRV, with third-party and RARLab UnRAR licensing recorded in `THIRD_PARTY_NOTICES.md`.
+- ZIP, 7z, RAR, and folder import adapters selected against the then-current Rust 1.85 MSRV, with third-party and RARLab UnRAR licensing recorded in `THIRD_PARTY_NOTICES.md`. Phase 10 raised the project MSRV to Rust 1.88 so patched `plist`/`quick-xml`/`time` releases can be used.
 - An AEMM-owned staging boundary with root and per-operation markers. Only marker-verified operation children can be cleaned; user-selected roots and unowned non-empty custom staging directories are never deleted or adopted.
 - Signature-based archive detection, strict Windows-relative path validation, case-insensitive collision/ancestor checks, link/reparse rejection, encrypted/multipart rejection, entry/file/total-size limits, compression-ratio limits, and ZIP overlapping-data rejection.
 - Manual `create_new` extraction for ZIP and folder sources, a custom 7z extraction callback that ignores library-computed destination paths, and bounded RAR read-to-memory followed by AEMM-controlled writes. No archive adapter uses a native destination-path extraction shortcut.
@@ -115,6 +115,15 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - Route-level lazy loading for all feature pages. The initial production JavaScript chunk dropped from roughly 553 kB to 348 kB before gzip, removing the Vite large-chunk warning.
 - Sixty-eight default Rust tests pass, including legacy preference deserialization, supported-locale validation, and exact Profile-order membership. Browser interaction/visual checks covered theme, locale, onboarding, keyboard drag-and-drop, skip navigation, and the 960x800 minimum viewport.
 
+### Phase 10 delivered
+
+- Safe single and 256-item batch uninstall for disabled mods. SQLite first records an uninstall intent, repository content is atomically renamed to a marker-owned `.aemm-remove-<UUID>` tombstone, database/Profile references commit transactionally, and only the exact validated tombstone inventory is then removed.
+- Startup recovery distinguishes pre-commit removals (restore the original mod) from post-commit removals (finish tombstone cleanup). Tampered, linked, unexpected, or unowned content is preserved for inspection instead of recursively deleted.
+- Dedicated repository/staging path changes with shared deployment/install/scan locking. A repository can change only after all mods are uninstalled and the old owned root is empty; pending installation/removal state, path overlap, unowned non-empty roots, and unsafe roots are rejected. AEMM never implicitly migrates or deletes an old repository.
+- SQLite startup `quick_check` and `foreign_key_check`, overflow-safe Profile reorder staging, production/development CSP separation, frozen JavaScript prototypes, release LTO/strip/panic settings, and frontend/backend metadata length alignment.
+- Seventy-five default Rust tests pass, including uninstall rollback/recovery, storage-root switching, foreign-key corruption detection, and Profile-order overflow. Strict Clippy, production TypeScript/Vite build, npm and RustSec dependency audits, browser interactions, desktop dev smoke, and release EXE smoke all pass.
+- Windows release artifacts were produced at `src-tauri/target/release`: the raw executable, an NSIS installer, and an MSI package. They are currently unsigned and will trigger normal Windows publisher/SmartScreen warnings until a code-signing certificate and release pipeline are configured.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -150,6 +159,9 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 31. General preference updates may change only presentation settings. Game and storage paths must continue through their dedicated validation services; the generic settings command rejects attempts to mutate either path-bearing section.
 32. Profile reordering is an exact-permutation operation over enabled membership. It preserves disabled rows, uses collision-free temporary positions inside one transaction, and does not claim that the saved order is an EFMI runtime winner rule.
+33. Uninstall is a separate transaction from disable. Only non-enabled mods may be removed; the filesystem is quarantined before the database commit, and both the database intent row and repository tombstone marker are required for recovery or cleanup.
+34. Changing storage roots is not a migration operation. The current repository must contain no database mods or repository content, and the destination must be empty/owned; old roots are neither moved nor deleted implicitly.
+35. Development and production WebViews use separate CSPs. Production does not allow the Vite development origin or WebSocket endpoint, and JavaScript prototype mutation is frozen by Tauri.
 
 ## EFMI observations (read-only, 2026-07-15)
 
@@ -182,11 +194,13 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 
 - English localization currently covers the application shell and onboarding only. Feature pages remain Chinese-first and the selector labels English as Preview.
 - Changing the persisted log filter takes full effect on the next application start because the rolling tracing subscriber is initialized once.
+- Release artifacts are not Authenticode-signed. Configure certificate-backed signing before public distribution to reduce Windows SmartScreen warnings.
+- RustSec reports zero vulnerabilities after the Phase 10 lockfile updates. It still reports 17 allowed maintenance/unsoundness warnings in Tauri's transitive lock graph: GTK3/glib entries are not selected for the Windows target, while legacy `unic-*` packages remain behind Tauri's `urlpattern` stack. Track upstream Tauri replacement rather than forking those dependencies locally.
 
 ## Next plan
 
-1. Phase 10: run the full security, performance, database-consistency, recovery, public-API, and Windows packaging audit.
-2. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
-3. Identify an authoritative CN/global game-version source without parsing stale logs.
-4. Complete feature-page English localization before removing the Preview label.
-5. Decide the repository license before accepting external source redistribution or contributions.
+1. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
+2. Identify an authoritative CN/global game-version source without parsing stale logs.
+3. Complete feature-page English localization before removing the Preview label.
+4. Decide the repository license before accepting external source redistribution or contributions.
+5. Add certificate-backed Authenticode signing and publish checksums through a reproducible release workflow.

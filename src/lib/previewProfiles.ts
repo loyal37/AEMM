@@ -76,6 +76,16 @@ export function isPreviewModEnabled(modId: string): boolean {
   return active?.mods.some((item) => item.modId === modId && item.enabled) ?? false;
 }
 
+export function removePreviewModReferences(modIds: string[]): void {
+  const removed = new Set(modIds);
+  profiles = profiles.map((profile) => ({
+    ...profile,
+    mods: profile.mods
+      .filter((item) => !removed.has(item.modId))
+      .map((item, index) => ({ ...item, loadOrder: index })),
+  }));
+}
+
 export function createPreviewProfile(name: string): Profile {
   const now = Math.floor(Date.now() / 1000);
   const profile: Profile = {

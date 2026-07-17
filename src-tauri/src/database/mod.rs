@@ -7,5 +7,7 @@ mod profile_store;
 pub use conflict_store::{ConflictStore, StoredConflictSubject};
 pub use connection::Database;
 pub use deployment_store::{DeploymentStore, StoredDeploymentSource};
-pub use mod_store::{ModContentReference, ModStore, ModSyncOutcome, StoredModIdentity};
+pub use mod_store::{
+    ModContentReference, ModStore, ModSyncOutcome, StoredModIdentity, StoredModRemoval,
+};
 pub use profile_store::ProfileStore;

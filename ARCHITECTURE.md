@@ -127,6 +127,10 @@ Phase 5 implements the installer boundary with four focused adapters:
 
 `ModService` is the transaction coordinator: it supplies current database identities to the core installer, serializes commit with repository scans, synchronizes SQLite, marks the journal database-synced, and only then removes staging. Tauri commands accept a source path only for the initial untrusted prepare call; commit/cancel accept only an operation UUID.
 
+Phase 10 adds an independent uninstall transaction. `ModStore::prepare_removals` rejects active enabled mods, records the original/tombstone paths and prior lifecycle, and marks each row `removing` in one transaction. `RepositoryRoot` then atomically quarantines existing direct-child mod roots under marker-owned `.aemm-remove-<UUID>` names. The final database commit deletes the mod rows (cascading Profile memberships) only after quarantine succeeds. Cleanup enumerates and validates the marker inventory rather than calling recursive delete on a mutable directory. Startup recovery restores a tombstone when its mod row still exists, or finishes cleanup after the database row was committed away.
+
+Repository/staging path configuration is also a dedicated `ModService` workflow sharing deployment, installation, and scan locks. The old repository must have zero database records and no content beyond its ownership marker; staging must have no pending operations. New custom roots must be empty or already owned and cannot overlap. The workflow persists canonical paths but deliberately does not move or delete old roots.
+
 ### Mods frontend and detail queries
 
 Phase 4 keeps server and UI responsibilities separate:
@@ -255,10 +259,28 @@ Initial migrations establish:
 - `profiles`
 - `profile_mods`
 - `deployment_records`
+- `app_state`
+- `pending_mod_removals`
 
 Schema migrations are embedded and applied at startup. SQLite foreign keys and WAL mode are enabled. Machine-specific settings remain in `config.json`.
 
 Migration `0002_mod_scanning.sql` adds file modification timestamps for incremental Hash reuse, local metadata tags, and lookup/uniqueness indexes. `ModStore::synchronize` uses one transaction: it preserves stable AEMM UUIDs and local overrides, updates author/file snapshots, and marks vanished repository entries broken instead of deleting user data.
+
+Migration `0003_deployment_state.sql` adds the authoritative active Profile pointer and deployment/profile indexes. Migration `0004_mod_removal_state.sql` records recoverable uninstall intent. On every startup, migrations are followed by bounded SQLite `quick_check(1)` and `foreign_key_check`; corruption is surfaced before services perform filesystem reconciliation.
+
+## Uninstall workflow
+
+```mermaid
+flowchart LR
+  Request["Disabled mod UUIDs"] --> Intent["SQLite removal intent + lifecycle=removing"]
+  Intent --> Tombstone["Atomic rename to .aemm-remove-UUID + marker"]
+  Tombstone --> Commit["Delete mod rows + cascade Profile membership"]
+  Commit --> Cleanup["Marker/inventory-only cleanup"]
+  Tombstone -. "pre-commit error/restart" .-> Restore["Restore original repository child"]
+  Commit -. "cleanup error/restart" .-> Retry["Preserve warning and retry owned cleanup"]
+```
+
+An enabled mod must be disabled first so deployment ownership is reconciled independently. Missing repository content can still remove a broken database record, but AEMM never uses the database alone as authority to delete an arbitrary path. A tombstone must be a direct child, non-link/reparse directory whose identity marker and expected UUID/path agree.
 
 ## Installation workflow
 
@@ -321,3 +343,6 @@ Logging uses daily rolling files plus debug console output. The non-blocking wri
 - Frontend directory selection has only `dialog:allow-open`; selected paths are still treated as untrusted and must pass backend adapter validation before persistence or use.
 - Open-directory and launch commands never accept arbitrary executable paths. They resolve saved settings through `GameService`, canonicalize again immediately before use, and launch without a command shell.
 - Mod preview/open-directory commands accept only a mod UUID. Preview reads are limited to 2 MiB, reject unsupported signatures including SVG/HTML, and traverse every repository component while rejecting links/reparse points.
+- Uninstall accepts only mod UUIDs, refuses active enabled rows, quarantines direct-child repository roots before database deletion, and removes only a marker-verified inventory. Unexpected files or links stop cleanup and preserve evidence.
+- Storage paths change only through a dedicated locked service that requires empty/owned roots and rejects overlaps and pending operations; generic preference updates cannot mutate paths.
+- Production CSP excludes Vite/WebSocket development origins, and Tauri freezes JavaScript prototypes.

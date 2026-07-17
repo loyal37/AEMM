@@ -54,6 +54,9 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Skip navigation, visible keyboard focus, reduced-motion support, and delayed global query/mutation progress feedback.
 - Pointer and keyboard Profile order editing with accessible move controls and transactional exact-membership persistence.
 - Route-level feature code splitting that removes the initial Vite large-chunk warning.
+- Recoverable single and 256-item batch uninstall with database intents, marker-owned repository tombstones, Profile membership cleanup, rollback, startup reconciliation, and matching list/detail UI.
+- Dedicated validated repository/staging path selection with empty-root requirements, operation locking, canonical persistence, and explicit no-migration behavior.
+- SQLite startup integrity/foreign-key checks, Profile reorder overflow regression coverage, and Windows raw EXE/NSIS/MSI release outputs.
 
 ### Security
 
@@ -72,6 +75,9 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Protect the active Profile from deletion, forbid deployment records on inactive Profiles, and re-check switch snapshots inside the final database transaction.
 
 - Refuse path-bearing game or storage changes through the generic preferences command; dedicated validated workflows remain the only path mutation boundary.
+- Refuse uninstall of active enabled mods and require database intent, direct-child containment, non-link roots, an identity marker, and an exact validated inventory before cleanup.
+- Reject storage-root changes while mods or pending operations exist; refuse overlapping/unowned destinations and never implicitly move or delete the old root.
+- Separate development and production CSPs, remove Vite/WebSocket origins from production, and freeze JavaScript prototypes in the WebView.
 
 ### Changed
 
@@ -79,3 +85,5 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Preserve vanished repository records and user overrides by marking them broken instead of deleting database state during synchronization.
 - Expose AEMM Profile order while leaving the EFMI conflict winner unset until loader precedence is independently verified.
 - Process orphan active deployments before revoke tombstones during startup recovery, allowing interrupted Profile switches with shared mod IDs to converge safely.
+- Enable LTO, single-codegen-unit optimization, panic abort, and symbol stripping for Windows release builds.
+- Raise the Rust MSRV from 1.85 to 1.88 and update `plist`, `quick-xml`, and `time` to RustSec-fixed versions.

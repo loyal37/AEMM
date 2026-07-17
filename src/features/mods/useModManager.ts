@@ -10,6 +10,7 @@ import {
   scanModRepository,
   setModFavorite,
   setModsEnabled,
+  uninstallMods,
   updateLocalModMetadata,
 } from "../../lib/tauri";
 import type { LocalModMetadata, ModDetails, ModListItem } from "../../types/app";
@@ -126,6 +127,22 @@ export function useSetModsEnabled() {
         void queryClient.invalidateQueries({ queryKey: ["mods"] });
       }
       void queryClient.invalidateQueries({ queryKey: CONFLICT_REPORT_KEY });
+    },
+  });
+}
+
+export function useUninstallMods() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: uninstallMods,
+    onSuccess: async (_result, modIds) => {
+      for (const modId of modIds) {
+        queryClient.removeQueries({ queryKey: modDetailsKey(modId) });
+        queryClient.removeQueries({ queryKey: ["mods", "preview", modId] });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["mods"] });
+      await queryClient.invalidateQueries({ queryKey: ["profiles"] });
+      await queryClient.invalidateQueries({ queryKey: CONFLICT_REPORT_KEY });
     },
   });
 }

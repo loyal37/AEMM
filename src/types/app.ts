@@ -164,6 +164,11 @@ export interface ModMutationResult {
   updated: number;
 }
 
+export interface ModRemovalResult {
+  removed: number;
+  warnings: string[];
+}
+
 export interface ModDeploymentMutationResult {
   updated: number;
   enabled: boolean;

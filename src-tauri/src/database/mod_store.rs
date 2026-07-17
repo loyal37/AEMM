@@ -45,9 +45,24 @@ pub struct StoredModIdentity {
     pub lifecycle_state: ModLifecycleState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredModRemoval {
+    pub mod_id: Uuid,
+    pub original_repository_path: PathBuf,
+    pub tombstone_repository_path: PathBuf,
+    pub previous_lifecycle_state: ModLifecycleState,
+}
+
 impl ModStore {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
+    }
+
+    pub async fn count(&self) -> Result<u64, AppError> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods")
+            .fetch_one(&self.pool)
+            .await?;
+        non_negative_u64(count, "mod count")
     }
 
     pub async fn load_scan_cache(&self) -> Result<ScanCache, AppError> {
@@ -501,6 +516,192 @@ impl ModStore {
         })
     }
 
+    pub async fn prepare_removals(
+        &self,
+        requests: &[(Uuid, PathBuf)],
+    ) -> Result<Vec<StoredModRemoval>, AppError> {
+        let now = unix_timestamp_seconds()?;
+        let mut transaction = self.pool.begin().await?;
+        let mut removals = Vec::with_capacity(requests.len());
+        for (mod_id, tombstone_path) in requests {
+            let row = sqlx::query(
+                "SELECT m.repository_path, m.lifecycle_state,
+                    EXISTS(SELECT 1 FROM deployment_records d WHERE d.mod_id = m.id) AS deployed,
+                    EXISTS(
+                        SELECT 1 FROM app_state s
+                        JOIN profile_mods pm
+                          ON pm.profile_id = s.active_profile_id AND pm.mod_id = m.id
+                        WHERE s.singleton = 1 AND pm.enabled = 1
+                    ) AS active_enabled
+                 FROM mods m WHERE m.id = ?",
+            )
+            .bind(mod_id.to_string())
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| AppError::NotAvailable(format!("模组 {mod_id} 不存在。")))?;
+            if row.try_get::<i64, _>("deployed")? != 0
+                || row.try_get::<i64, _>("active_enabled")? != 0
+            {
+                return Err(AppError::ModInstall(format!(
+                    "模组 {mod_id} 仍处于启用或已部署状态；请先禁用再卸载。"
+                )));
+            }
+            let lifecycle_value: String = row.try_get("lifecycle_state")?;
+            let previous_lifecycle_state = lifecycle_from_database(&lifecycle_value)?;
+            if !matches!(
+                previous_lifecycle_state,
+                ModLifecycleState::Installed | ModLifecycleState::Broken
+            ) {
+                return Err(AppError::ModInstall(format!(
+                    "模组 {mod_id} 当前正在执行其他生命周期操作。"
+                )));
+            }
+            let original_repository_path =
+                PathBuf::from(row.try_get::<String, _>("repository_path")?);
+            sqlx::query(
+                "INSERT INTO pending_mod_removals
+                    (mod_id, original_repository_path, tombstone_repository_path,
+                     previous_lifecycle_state, created_at)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(mod_id.to_string())
+            .bind(storage_path(&original_repository_path))
+            .bind(storage_path(tombstone_path))
+            .bind(lifecycle_to_database(previous_lifecycle_state))
+            .bind(now)
+            .execute(&mut *transaction)
+            .await?;
+            let updated = sqlx::query(
+                "UPDATE mods SET lifecycle_state = 'removing', updated_at = ?
+                 WHERE id = ? AND lifecycle_state = ?",
+            )
+            .bind(now)
+            .bind(mod_id.to_string())
+            .bind(lifecycle_value)
+            .execute(&mut *transaction)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(AppError::DataIntegrity(format!(
+                    "模组 {mod_id} 的生命周期状态在卸载准备期间发生变化。"
+                )));
+            }
+            removals.push(StoredModRemoval {
+                mod_id: *mod_id,
+                original_repository_path,
+                tombstone_repository_path: tombstone_path.clone(),
+                previous_lifecycle_state,
+            });
+        }
+        transaction.commit().await?;
+        Ok(removals)
+    }
+
+    pub async fn commit_removals(&self, removals: &[StoredModRemoval]) -> Result<(), AppError> {
+        let mut transaction = self.pool.begin().await?;
+        for removal in removals {
+            let pending = sqlx::query(
+                "SELECT original_repository_path, tombstone_repository_path,
+                        previous_lifecycle_state
+                 FROM pending_mod_removals WHERE mod_id = ?",
+            )
+            .bind(removal.mod_id.to_string())
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| {
+                AppError::DataIntegrity(format!("模组 {} 缺少卸载事务记录。", removal.mod_id))
+            })?;
+            if pending.try_get::<String, _>("original_repository_path")?
+                != storage_path(&removal.original_repository_path)
+                || pending.try_get::<String, _>("tombstone_repository_path")?
+                    != storage_path(&removal.tombstone_repository_path)
+                || pending.try_get::<String, _>("previous_lifecycle_state")?
+                    != lifecycle_to_database(removal.previous_lifecycle_state)
+            {
+                return Err(AppError::DataIntegrity(format!(
+                    "模组 {} 的卸载事务记录发生变化。",
+                    removal.mod_id
+                )));
+            }
+            let deployment_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM deployment_records WHERE mod_id = ?")
+                    .bind(removal.mod_id.to_string())
+                    .fetch_one(&mut *transaction)
+                    .await?;
+            if deployment_count != 0 {
+                return Err(AppError::DataIntegrity(format!(
+                    "模组 {} 在卸载提交前重新出现部署记录。",
+                    removal.mod_id
+                )));
+            }
+            let deleted =
+                sqlx::query("DELETE FROM mods WHERE id = ? AND lifecycle_state = 'removing'")
+                    .bind(removal.mod_id.to_string())
+                    .execute(&mut *transaction)
+                    .await?;
+            if deleted.rows_affected() != 1 {
+                return Err(AppError::DataIntegrity(format!(
+                    "模组 {} 在卸载提交期间发生变化。",
+                    removal.mod_id
+                )));
+            }
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn rollback_removals(&self, removals: &[StoredModRemoval]) -> Result<(), AppError> {
+        let now = unix_timestamp_seconds()?;
+        let mut transaction = self.pool.begin().await?;
+        for removal in removals {
+            let restored = sqlx::query(
+                "UPDATE mods SET lifecycle_state = ?, updated_at = ?
+                 WHERE id = ? AND lifecycle_state = 'removing'",
+            )
+            .bind(lifecycle_to_database(removal.previous_lifecycle_state))
+            .bind(now)
+            .bind(removal.mod_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+            if restored.rows_affected() != 1 {
+                return Err(AppError::DataIntegrity(format!(
+                    "模组 {} 的卸载状态无法回滚。",
+                    removal.mod_id
+                )));
+            }
+            let deleted = sqlx::query("DELETE FROM pending_mod_removals WHERE mod_id = ?")
+                .bind(removal.mod_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+            if deleted.rows_affected() != 1 {
+                return Err(AppError::DataIntegrity(format!(
+                    "模组 {} 的卸载事务记录无法回滚。",
+                    removal.mod_id
+                )));
+            }
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn pending_removals(&self) -> Result<Vec<StoredModRemoval>, AppError> {
+        let rows = sqlx::query(
+            "SELECT mod_id, original_repository_path, tombstone_repository_path,
+                    previous_lifecycle_state
+             FROM pending_mod_removals ORDER BY created_at, mod_id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(row_to_removal).collect()
+    }
+
+    pub async fn contains_mod(&self, mod_id: Uuid) -> Result<bool, AppError> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE id = ?")
+            .bind(mod_id.to_string())
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count == 1)
+    }
+
     pub async fn set_favorite(&self, mod_ids: &[Uuid], favorite: bool) -> Result<u64, AppError> {
         let now = unix_timestamp_seconds()?;
         let mut transaction = self.pool.begin().await?;
@@ -626,6 +827,32 @@ fn row_to_file_details(row: &sqlx::sqlite::SqliteRow) -> Result<ModFileDetails, 
         content_hash: row.try_get("content_hash")?,
         file_role: row.try_get("file_role")?,
         modified_at_ms: modified_at_nanos / 1_000_000,
+    })
+}
+
+fn row_to_removal(row: &sqlx::sqlite::SqliteRow) -> Result<StoredModRemoval, AppError> {
+    let mod_id_value: String = row.try_get("mod_id")?;
+    let mod_id = Uuid::parse_str(&mod_id_value)
+        .map_err(|_| AppError::DataIntegrity(format!("无效的待卸载模组 UUID：{mod_id_value}")))?;
+    let lifecycle: String = row.try_get("previous_lifecycle_state")?;
+    let previous_lifecycle_state = lifecycle_from_database(&lifecycle)?;
+    if !matches!(
+        previous_lifecycle_state,
+        ModLifecycleState::Installed | ModLifecycleState::Broken
+    ) {
+        return Err(AppError::DataIntegrity(format!(
+            "待卸载模组 {mod_id} 的原生命周期状态无效。"
+        )));
+    }
+    Ok(StoredModRemoval {
+        mod_id,
+        original_repository_path: PathBuf::from(
+            row.try_get::<String, _>("original_repository_path")?,
+        ),
+        tombstone_repository_path: PathBuf::from(
+            row.try_get::<String, _>("tombstone_repository_path")?,
+        ),
+        previous_lifecycle_state,
     })
 }
 

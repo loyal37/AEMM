@@ -47,20 +47,24 @@ impl AppServices {
         let database = Database::connect(&paths.database_file).await?;
         tracing::info!("database migrations and health check completed");
         let game = GameService::new(settings.clone());
-        let mods = ModService::new(
-            settings.clone(),
-            &database,
-            paths.repository_directory.clone(),
-            paths.staging_directory.clone(),
-        );
-        if let Err(error) = mods.recover_pending_installations().await {
-            tracing::error!(error = %error, diagnostic = ?error, "mod installation recovery could not complete during startup");
-        }
         let deployment = DeploymentService::new(
             settings.clone(),
             &database,
             paths.repository_directory.clone(),
         );
+        let mods = ModService::new(
+            settings.clone(),
+            &database,
+            paths.repository_directory.clone(),
+            paths.staging_directory.clone(),
+            deployment.operation_lock(),
+        );
+        if let Err(error) = mods.recover_pending_removals().await {
+            tracing::error!(error = %error, diagnostic = ?error, "mod uninstall recovery could not complete during startup");
+        }
+        if let Err(error) = mods.recover_pending_installations().await {
+            tracing::error!(error = %error, diagnostic = ?error, "mod installation recovery could not complete during startup");
+        }
         let conflicts = ConflictService::new(&database, deployment.operation_lock());
         let profiles = ProfileService::new(&database, deployment.operation_lock());
         match game.validated_efmi_root().await {
@@ -116,6 +120,13 @@ impl AppServices {
             ));
         }
         self.settings.update(settings).await
+    }
+
+    pub async fn configure_storage(
+        &self,
+        storage: crate::models::StorageSettings,
+    ) -> Result<AppSettings, AppError> {
+        self.mods.configure_storage(storage).await
     }
 
     pub async fn game_status(&self) -> Result<GameStatus, AppError> {
@@ -195,6 +206,13 @@ impl AppServices {
         favorite: bool,
     ) -> Result<ModMutationResult, AppError> {
         self.mods.set_favorite(mod_ids, favorite).await
+    }
+
+    pub async fn uninstall_mods(
+        &self,
+        mod_ids: Vec<uuid::Uuid>,
+    ) -> Result<crate::models::ModRemovalResult, AppError> {
+        self.mods.uninstall(mod_ids).await
     }
 
     pub async fn set_mods_enabled(

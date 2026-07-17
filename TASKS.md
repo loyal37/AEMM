@@ -82,4 +82,11 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 10 — Audit and optimization
 
-- [ ] Full security, performance, database-consistency, recovery, and API review.
+- [x] Add recoverable single/batch mod uninstall with marker-owned tombstones, Profile cleanup, rollback, and startup recovery.
+- [x] Add dedicated validated repository/staging path changes without implicit data migration or deletion.
+- [x] Add SQLite startup integrity checks and overflow-safe Profile reorder transactions.
+- [x] Separate production/development CSPs and harden the release profile/WebView prototype boundary.
+- [x] Review path traversal, destructive calls, archive/deployment/install rollback, async blocking boundaries, database consistency, and public command scope.
+- [x] Run production dependency audit, locked dependency-tree review, static panic/unsafe scan, strict TypeScript/Rust checks, and 75 backend tests.
+- [x] Run browser uninstall/storage interaction and visual checks plus Tauri dev/release executable smoke tests.
+- [x] Build and verify the raw Windows executable, NSIS installer, and MSI package; record unsigned-release follow-up.

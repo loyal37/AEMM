@@ -256,10 +256,10 @@ impl DeploymentService {
         }
 
         for manifest in &stored {
-            if manifest.strategy_id == EFMI_COPY_STRATEGY_ID {
-                if let Err(error) = strategy.verify(manifest).await {
-                    tracing::error!(deployment_id = %manifest.id, mod_id = %manifest.mod_id, error = %error, "database says mod is enabled but its EFMI deployment is not valid");
-                }
+            if manifest.strategy_id == EFMI_COPY_STRATEGY_ID
+                && let Err(error) = strategy.verify(manifest).await
+            {
+                tracing::error!(deployment_id = %manifest.id, mod_id = %manifest.mod_id, error = %error, "database says mod is enabled but its EFMI deployment is not valid");
             }
         }
         Ok(())

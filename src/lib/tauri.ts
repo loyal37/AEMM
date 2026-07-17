@@ -16,15 +16,18 @@ import type {
   ModListItem,
   ModMutationResult,
   ModPreview,
+  ModRemovalResult,
   ModScanResult,
   Profile,
   ProfileSwitchResult,
+  StorageSettings,
 } from "../types/app";
 import {
   getPreviewDetails,
   getPreviewConflictReport,
   getPreviewImage,
   getPreviewMods,
+  removePreviewMods,
   setPreviewFavorites,
   updatePreviewMetadata,
 } from "./previewMods";
@@ -84,6 +87,14 @@ export async function updateSettings(settings: AppSettings): Promise<AppSettings
     return structuredClone(previewSettings);
   }
   return invoke<AppSettings>("update_settings", { settings });
+}
+
+export async function setStoragePaths(storage: StorageSettings): Promise<AppSettings> {
+  if (!isTauri()) {
+    previewSettings = { ...previewSettings, storage: structuredClone(storage) };
+    return structuredClone(previewSettings);
+  }
+  return invoke<AppSettings>("set_storage_paths", { storage });
 }
 
 const previewGameStatus: GameStatus = {
@@ -263,6 +274,11 @@ export async function setModFavorite(
   return invoke<ModMutationResult>("set_mod_favorite", {
     request: { modIds, favorite },
   });
+}
+
+export async function uninstallMods(modIds: string[]): Promise<ModRemovalResult> {
+  if (!isTauri()) return { removed: removePreviewMods(modIds), warnings: [] };
+  return invoke<ModRemovalResult>("uninstall_mods", { request: { modIds } });
 }
 
 export async function setModsEnabled(

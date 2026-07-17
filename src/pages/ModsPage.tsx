@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   Star,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import {
   useScanMods,
   useSetModFavorite,
   useSetModsEnabled,
+  useUninstallMods,
 } from "../features/mods/useModManager";
 import { VirtualModBrowser } from "../features/mods/VirtualModBrowser";
 import { ImportModDialog } from "../features/mods/ImportModDialog";
@@ -46,6 +48,7 @@ export function ModsPage() {
   const scan = useScanMods();
   const favorite = useSetModFavorite();
   const deployment = useSetModsEnabled();
+  const uninstall = useUninstallMods();
   const [viewMode, setViewMode] = useState<ModViewMode>("grid");
   const [filters, setFilters] = useState<ModFilters>(defaultModFilters);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -73,6 +76,8 @@ export function ModsPage() {
   );
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const deploymentAvailable = desktopReady && gameStatus.data?.loader?.valid === true;
+  const selectedItems = allMods.filter((item) => selectedIds.has(item.id));
+  const selectedIncludesEnabled = selectedItems.some((item) => item.enabled);
   const openImport = useCallback(() => setImportOpen(true), []);
   const closeImport = useCallback(() => setImportOpen(false), []);
 
@@ -142,13 +147,14 @@ export function ModsPage() {
           {scan.data.updated} 个，复用 {scan.data.reusedHashes} 个文件 Hash。
         </p>
       ) : null}
-      {scan.isError || mods.isError || favorite.isError || deployment.isError || conflicts.isError ? (
+      {scan.isError || mods.isError || favorite.isError || deployment.isError || uninstall.isError || conflicts.isError ? (
         <p className="inline-error">
           {commandErrorMessage(
             scan.error ??
               mods.error ??
               favorite.error ??
               deployment.error ??
+              uninstall.error ??
               conflicts.error,
           )}
         </p>
@@ -164,6 +170,12 @@ export function ModsPage() {
           {deployment.data.warnings.map((warning) => (
             <span key={warning}>{warning}</span>
           ))}
+        </div>
+      ) : null}
+      {uninstall.isSuccess && uninstall.data.removed > 0 ? (
+        <div className="deployment-feedback" role="status">
+          <strong>已安全卸载 {uninstall.data.removed} 个模组</strong>
+          {uninstall.data.warnings.map((warning) => <span key={warning}>{warning}</span>)}
         </div>
       ) : null}
 
@@ -340,6 +352,25 @@ export function ModsPage() {
               }
             >
               取消收藏
+            </button>
+            <button
+              className="button button--danger"
+              type="button"
+              disabled={
+                selectedIncludesEnabled ||
+                uninstall.isPending ||
+                deployment.isPending ||
+                scan.isPending
+              }
+              title={selectedIncludesEnabled ? "请先禁用选中的模组再卸载" : undefined}
+              onClick={() => {
+                if (!window.confirm(`确定卸载选中的 ${selectedIds.size} 个模组吗？此操作会删除 AEMM 仓库中的模组本体，并从所有 Profile 中移除对应记录。`)) return;
+                uninstall.mutate([...selectedIds], {
+                  onSuccess: () => setSelectedIds(new Set()),
+                });
+              }}
+            >
+              <Trash2 size={15} /> 批量卸载
             </button>
             <button
               className="batch-bar__clear"

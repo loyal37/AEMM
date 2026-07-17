@@ -22,7 +22,10 @@ pub use installer::{
 };
 pub use metadata::FileSystemMetadataManager;
 pub(crate) use repository::path_is_link_or_reparse_point;
-pub use repository::{RepositoryInitializationPolicy, RepositoryRelativePath, RepositoryRoot};
+pub use repository::{
+    PendingRemovalRecovery, REMOVAL_TOMBSTONE_PREFIX, RepositoryInitializationPolicy,
+    RepositoryRelativePath, RepositoryRemoval, RepositoryRoot,
+};
 pub use root_detector::{DetectedModRoot, detect_mod_root};
 pub use scanner::{
     CachedModFile, FileSystemModScanner, RepositoryScan, ScanCache, ScanIssue, ScannedMod,

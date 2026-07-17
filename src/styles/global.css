@@ -497,6 +497,17 @@ select:disabled {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.button--danger {
+  color: #fff;
+  border-color: rgba(239, 113, 128, 0.34);
+  background: rgba(194, 61, 80, 0.82);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: #c23d50;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 .button--secondary:hover:not(:disabled),
 .button--ghost:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.065);

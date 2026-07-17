@@ -14,10 +14,11 @@ import {
   ShieldCheck,
   Star,
   Tag,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
 import { ConflictReportPanel } from "../features/conflicts/ConflictReportPanel";
@@ -34,6 +35,7 @@ import {
   useOpenModDirectory,
   useSetModFavorite,
   useSetModsEnabled,
+  useUninstallMods,
   useUpdateLocalModMetadata,
 } from "../features/mods/useModManager";
 import { VirtualModFileList } from "../features/mods/VirtualModFileList";
@@ -42,12 +44,14 @@ import type { LocalModMetadata, ModDetails } from "../types/app";
 
 export function ModDetailPage() {
   const { modId } = useParams();
+  const navigate = useNavigate();
   const bootstrap = useAppBootstrap();
   const details = useModDetails(modId);
   const conflicts = useConflictReport();
   const gameStatus = useGameStatus();
   const favorite = useSetModFavorite();
   const deployment = useSetModsEnabled();
+  const uninstall = useUninstallMods();
   const openDirectory = useOpenModDirectory();
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const deploymentAvailable = desktopReady && gameStatus.data?.loader?.valid === true;
@@ -155,11 +159,23 @@ export function ModDetailPage() {
             >
               <FolderOpen size={16} /> 打开所在目录
             </button>
+            <button
+              className="button button--danger"
+              type="button"
+              disabled={item.enabled || uninstall.isPending || deployment.isPending}
+              title={item.enabled ? "请先禁用模组再卸载" : undefined}
+              onClick={() => {
+                if (!window.confirm(`确定卸载“${item.name}”吗？此操作会删除 AEMM 仓库中的模组本体，并从所有 Profile 中移除对应记录。`)) return;
+                uninstall.mutate([item.id], { onSuccess: () => navigate("/mods") });
+              }}
+            >
+              <Trash2 size={16} /> {uninstall.isPending ? "正在卸载…" : "卸载模组"}
+            </button>
           </div>
-          {favorite.isError || openDirectory.isError || deployment.isError ? (
+          {favorite.isError || openDirectory.isError || deployment.isError || uninstall.isError ? (
             <p className="inline-error">
               {commandErrorMessage(
-                favorite.error ?? openDirectory.error ?? deployment.error,
+                favorite.error ?? openDirectory.error ?? deployment.error ?? uninstall.error,
               )}
             </p>
           ) : null}
@@ -308,23 +324,23 @@ function LocalMetadataEditor({ details }: { details: ModDetails }) {
       <div className="local-metadata-form__grid">
         <label>
           <span>显示名称</span>
-          <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={details.authorName} />
+          <input maxLength={512} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={details.authorName} />
         </label>
         <label>
           <span>本地分类</span>
-          <input value={category} onChange={(event) => setCategory(event.target.value)} placeholder={details.authorCategory ?? "未分类"} />
+          <input maxLength={512} value={category} onChange={(event) => setCategory(event.target.value)} placeholder={details.authorCategory ?? "未分类"} />
         </label>
         <label className="field-span-full">
           <span>显示描述</span>
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="留空时使用作者描述" />
+          <textarea maxLength={32768} value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="留空时使用作者描述" />
         </label>
         <label className="field-span-full">
           <span>私人备注</span>
-          <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} placeholder="只保存在本机数据库中" />
+          <textarea maxLength={32768} value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} placeholder="只保存在本机数据库中" />
         </label>
         <label className="field-span-full">
           <span>标签</span>
-          <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="角色, 截图, 常用" />
+          <input maxLength={4160} value={tags} onChange={(event) => setTags(event.target.value)} placeholder="角色, 截图, 常用" />
         </label>
       </div>
       {mutation.isError ? <p className="inline-error">{commandErrorMessage(mutation.error)}</p> : null}

@@ -26,6 +26,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_commands::get_app_bootstrap,
             commands::settings_commands::update_settings,
+            commands::settings_commands::set_storage_paths,
             commands::game_commands::get_game_status,
             commands::game_commands::detect_game_installations,
             commands::game_commands::set_game_installation,
@@ -40,6 +41,7 @@ pub fn run() {
             commands::mod_commands::list_installed_mods,
             commands::mod_commands::get_mod_details,
             commands::mod_commands::set_mod_favorite,
+            commands::mod_commands::uninstall_mods,
             commands::mod_commands::set_mods_enabled,
             commands::mod_commands::get_mod_preview,
             commands::mod_commands::open_mod_directory,

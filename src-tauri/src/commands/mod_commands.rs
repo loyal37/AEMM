@@ -7,7 +7,8 @@ use crate::{
     models::{
         ModDeploymentMutationResult, ModDetails, ModImportOperation, ModImportPlan,
         ModInstallProgress, ModInstallResult, ModListItem, ModMutationResult, ModPreview,
-        ModScanResult, PrepareModImport, SetModFavorite, SetModsEnabled, UpdateLocalModMetadata,
+        ModRemovalResult, ModScanResult, PrepareModImport, RemoveMods, SetModFavorite,
+        SetModsEnabled, UpdateLocalModMetadata,
     },
     services::AppServices,
 };
@@ -93,6 +94,17 @@ pub async fn set_mod_favorite(
 ) -> CommandResult<ModMutationResult> {
     services
         .set_mod_favorite(request.mod_ids, request.favorite)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn uninstall_mods(
+    request: RemoveMods,
+    services: State<'_, AppServices>,
+) -> CommandResult<ModRemovalResult> {
+    services
+        .uninstall_mods(request.mod_ids)
         .await
         .map_err(CommandError::from)
 }

@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::{
     errors::{CommandError, CommandResult},
-    models::AppSettings,
+    models::{AppSettings, StorageSettings},
     services::AppServices,
 };
 
@@ -13,6 +13,17 @@ pub async fn update_settings(
 ) -> CommandResult<AppSettings> {
     services
         .update_settings(settings)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn set_storage_paths(
+    storage: StorageSettings,
+    services: State<'_, AppServices>,
+) -> CommandResult<AppSettings> {
+    services
+        .configure_storage(storage)
         .await
         .map_err(CommandError::from)
 }

@@ -5,7 +5,7 @@ import type {
   ModListItem,
   ModPreview,
 } from "../types/app";
-import { isPreviewModEnabled } from "./previewProfiles";
+import { isPreviewModEnabled, removePreviewModReferences } from "./previewProfiles";
 
 const names = [
   "佩丽卡 · 深海礼装",
@@ -20,13 +20,14 @@ const names = [
 const categories = ["角色", "材质", "光影", "武器", "界面"] as const;
 const favoriteOverrides = new Map<string, boolean>();
 const metadataOverrides = new Map<string, LocalModMetadata>();
+const removedMods = new Set<string>();
 
 function idFor(index: number): string {
   return `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
 }
 
 function baseMods(): ModListItem[] {
-  return Array.from({ length: 48 }, (_, index) => {
+  return Array.from({ length: 48 }, (_, index): ModListItem => {
     const name = names[index % names.length] ?? "终末地模组";
     const category = categories[index % categories.length] ?? "其他";
     const id = idFor(index);
@@ -48,7 +49,7 @@ function baseMods(): ModListItem[] {
       updatedAt: 1_752_400_000 - (index % 11) * 43_200,
       lifecycleState: index % 17 === 0 ? "broken" : "installed",
     };
-  });
+  }).filter((item) => !removedMods.has(item.id));
 }
 
 export function getPreviewMods(): ModListItem[] {
@@ -114,6 +115,22 @@ export function getPreviewConflictReport(): ConflictReport {
 
 export function setPreviewFavorites(modIds: string[], favorite: boolean): void {
   for (const modId of modIds) favoriteOverrides.set(modId, favorite);
+}
+
+export function removePreviewMods(modIds: string[]): number {
+  const current = new Map(getPreviewMods().map((item) => [item.id, item]));
+  for (const modId of modIds) {
+    const item = current.get(modId);
+    if (!item) throw new Error(`Preview mod ${modId} does not exist.`);
+    if (item.enabled) throw new Error("Enabled preview mods must be disabled before uninstalling.");
+  }
+  for (const modId of modIds) {
+    removedMods.add(modId);
+    favoriteOverrides.delete(modId);
+    metadataOverrides.delete(modId);
+  }
+  removePreviewModReferences(modIds);
+  return new Set(modIds).size;
 }
 
 export function getPreviewDetails(modId: string): ModDetails | null {

@@ -17,6 +17,7 @@ import type { ChangeEvent } from "react";
 import { PageHeader } from "../components/ui/PageHeader";
 import {
   useAppBootstrap,
+  useSetStoragePaths,
   useUpdateAppSettings,
 } from "../features/bootstrap/useAppBootstrap";
 import { useOnboarding } from "../features/experience/AppExperience";
@@ -64,6 +65,7 @@ export function SettingsPage() {
   const configureLoader = useSetEfmiLoaderRoot();
   const setLaunchMode = useSetGameLaunchMode();
   const openDirectory = useOpenGameDirectory();
+  const configureStorage = useSetStoragePaths();
   const updatePreferences = useUpdateAppSettings();
   const onboarding = useOnboarding();
 
@@ -76,6 +78,7 @@ export function SettingsPage() {
     configureGame.isPending ||
     configureLoader.isPending ||
     setLaunchMode.isPending ||
+    configureStorage.isPending ||
     updatePreferences.isPending;
   const operationError =
     configureGame.error ??
@@ -83,6 +86,7 @@ export function SettingsPage() {
     setLaunchMode.error ??
     detect.error ??
     openDirectory.error ??
+    configureStorage.error ??
     updatePreferences.error ??
     gameStatus.error;
 
@@ -113,6 +117,22 @@ export function SettingsPage() {
       if (typeof selected === "string") {
         await configureLoader.mutateAsync(selected);
       }
+    } catch {
+      // The mutation or dialog state renders the actionable error below.
+    }
+  }
+
+  async function handleChooseStorage(kind: "repository" | "staging") {
+    if (!settings) return;
+    try {
+      const title =
+        kind === "repository" ? "选择新的模组仓库目录" : "选择新的安装临时目录";
+      const selected = await chooseDirectory(title);
+      if (typeof selected !== "string") return;
+      await configureStorage.mutateAsync({
+        ...settings.storage,
+        [kind === "repository" ? "repositoryPath" : "stagingPath"]: selected,
+      });
     } catch {
       // The mutation or dialog state renders the actionable error below.
     }
@@ -302,10 +322,28 @@ export function SettingsPage() {
             <p className="path-value path-value--muted">
               临时目录：{displayPath(settings?.storage.stagingPath)}
             </p>
+            <small>
+              更改仓库前必须先卸载全部模组并清空旧仓库；AEMM 不会自动搬运或删除旧目录。
+            </small>
           </div>
-          <button className="button button--secondary" type="button" disabled>
-            更改位置
-          </button>
+          <div className="path-setting-row__actions">
+            <button
+              className="button button--secondary"
+              type="button"
+              disabled={!desktopReady || !settings || busy}
+              onClick={() => void handleChooseStorage("repository")}
+            >
+              更改仓库
+            </button>
+            <button
+              className="button button--secondary"
+              type="button"
+              disabled={!desktopReady || !settings || busy}
+              onClick={() => void handleChooseStorage("staging")}
+            >
+              更改临时目录
+            </button>
+          </div>
         </article>
 
         <article className="setting-card">

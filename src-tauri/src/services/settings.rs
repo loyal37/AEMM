@@ -23,6 +23,10 @@ pub struct SettingsService {
 }
 
 impl SettingsService {
+    pub fn validate_candidate(settings: &AppSettings) -> Result<(), AppError> {
+        validate_settings(settings)
+    }
+
     pub async fn load_or_create(paths: &AppPaths) -> Result<Self, AppError> {
         recover_interrupted_write(&paths.config_file).await?;
 
@@ -253,16 +257,17 @@ fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), AppError> {
     }
 
     if let Err(persist_error) = temporary.persist(path) {
-        if had_existing_file && backup.exists() {
-            if let Err(restore_error) = fs::rename(&backup, path) {
-                tracing::error!(
-                    write_error = %persist_error.error,
-                    restore_error = %restore_error,
-                    config_path = %path.display(),
-                    "configuration write and rollback both failed"
-                );
-                return Err(AppError::file_system(path, restore_error));
-            }
+        if had_existing_file
+            && backup.exists()
+            && let Err(restore_error) = fs::rename(&backup, path)
+        {
+            tracing::error!(
+                write_error = %persist_error.error,
+                restore_error = %restore_error,
+                config_path = %path.display(),
+                "configuration write and rollback both failed"
+            );
+            return Err(AppError::file_system(path, restore_error));
         }
         return Err(AppError::file_system(path, persist_error.error));
     }
