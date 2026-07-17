@@ -14,7 +14,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Current implementation status
 
-- Phase 1 foundation through Phase 7 conflict detection are implemented and validated locally on Windows 11.
+- Phase 1 foundation through Phase 8 Profile management are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -97,6 +97,15 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - Actual EFMI winner selection remains intentionally unset. The UI labels Profile order separately and states that recursive loader/Hash winner semantics are not verified rather than presenting a fabricated priority.
 - Sixty default Rust tests pass, including official-template-shaped fixtures, deployment-marker tampering, resource evidence, path collisions, false-positive prevention, and ordered database snapshots. Browser preview checks at 1440×1000 and 960×800 reported no page errors or horizontal overflow.
 
+### Phase 8 delivered
+
+- A transactional `ProfileStore` and locked `ProfileService` for list/create/rename/copy/delete operations, with normalized 64-character names, case-insensitive uniqueness, active-Profile deletion protection, and preserved ordered memberships.
+- Rollback-capable Profile switching through the existing EFMI deployment transaction boundary. Source deployments are marker-verified and atomically quarantined, target mods are fingerprint-verified and deployed in stored order, and SQLite replaces deployment records plus `app_state.active_profile_id` in one commit.
+- Failure rollback removes newly created target deployments before restoring source revoke tombstones. If the process stops mid-switch, startup recovery now orders pending/orphan-active cleanup ahead of revoke restoration so shared mod directory names converge safely.
+- Empty Profiles can switch without a configured loader. Non-empty switching requires a freshly validated EFMI root and never trusts a path from the frontend.
+- A complete Profiles workspace with active status, enabled counts, saved order previews, create/copy/rename/delete controls, switch progress/results/warnings, a live top-bar selector, Dashboard active-Profile state, and deterministic browser-preview behavior.
+- Sixty-five default Rust tests pass, including CRUD protections, full two-way Profile reconciliation, rollback after an invalid target mod, and loader-free empty switching. Browser interaction/visual checks at 1440×1000 and 960×800 reported no page errors or horizontal overflow.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -122,10 +131,13 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 21. Phase 6's first concrete strategy copies one repository mod into a stable, isolated `AEMM_<UUID>` child under the verified EFMI `Mods` root. Shared deployment interfaces remain strategy-neutral; no EFMI path convention leaks into the repository or scanner.
 22. EFMI's verified `DISABLED*` exclusion is the transaction boundary: work-in-progress copies and revoke tombstones are never visible as active mods. The database is never allowed to authorize deletion by itself; the on-disk ownership marker and exact file inventory must also agree.
 23. Deployment lists are immutable Hash/size manifests. AEMM refuses automatic revoke when deployed content has been changed or augmented, and removal enumerates only manifest paths so a raced-in extra path is never recursively deleted.
-24. The singleton `app_state.active_profile_id` is introduced before full Profile UI so Phase 6 never hard-codes the default Profile in queries or deployment services. Phase 8 will reuse this state for reconciliation.
+24. The singleton `app_state.active_profile_id` is the authoritative activity pointer; all deployment, conflict, mod-list, Dashboard, and Profile queries derive current state from it rather than assuming the seeded default Profile.
 25. Conflict analysis reads the immutable manifests and currently deployed INI files for enabled mods. It does not infer runtime targets from repository filenames, and it shares the deployment mutation lock to avoid analyzing a half-completed filesystem transition.
 26. Repeated ordinary section names are valid in the EFMI Tools output because each included INI has its own namespace. Only explicit namespace collisions, overlapping override Hashes, and actual destination paths are reported by Phase 7.
 27. `profile_mods.load_order` is exposed as the current AEMM arrangement, not as a verified EFMI winner rule. Every Phase 7 `winning_mod_id` remains `None` until upstream source behavior and representative runtime fixtures prove deterministic precedence.
+28. A non-active Profile stores desired membership only and must not own `deployment_records`. During a switch, source records remain authoritative until all target filesystem work succeeds; one transaction then removes source manifests, inserts target manifests, and advances `app_state`.
+29. The current EFMI strategy uses the same isolated `AEMM_<mod UUID>` directory across Profiles. Phase 8 therefore quarantines the complete source set and redeploys the complete target set, including shared mods, instead of mutating ownership markers in place.
+30. Profile CRUD and deployment/conflict mutations share one async operation lock. Database transactions still re-check active IDs, names, memberships, and manifests so the lock is coordination—not the sole consistency boundary.
 
 ## EFMI observations (read-only, 2026-07-15)
 
@@ -154,10 +166,12 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - Phase 3 does not infer EFMI deployment targets or loader priority from scanned files. File roles are descriptive only until real mod fixtures establish adapter-specific semantics.
 - Manual edits that create duplicate case-insensitive author IDs cause the scan transaction to fail with an actionable metadata error, preserving the previously consistent database state.
 - Preview images larger than 2 MiB or with unsupported signatures fall back to a generated placeholder. A managed thumbnail cache can be added later if real fixtures require large-source downscaling.
+- Profile switching currently redeploys the full target set because EFMI deployment directories are keyed by mod UUID and ownership markers include the Profile ID. Safe shared-deployment transfer can be optimized later only with an explicit marker/database protocol and crash fixtures.
 
 ## Next plan
 
-1. Phase 8: implement Profile create/delete/rename/copy, ordered memberships, and rollback-capable switching through the existing deployment transaction boundary.
-2. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
-3. Identify an authoritative CN/global game-version source without parsing stale logs.
-4. Decide the repository license before accepting external source redistribution or contributions.
+1. Phase 9: complete accessibility, localization/theme behavior, onboarding, load-order editing, settings validation feedback, and long-operation UX.
+2. Phase 10: run the full security, performance, database-consistency, recovery, and public-API audit.
+3. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
+4. Identify an authoritative CN/global game-version source without parsing stale logs.
+5. Decide the repository license before accepting external source redistribution or contributions.

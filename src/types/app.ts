@@ -215,6 +215,30 @@ export interface ConflictReport {
   warnings: string[];
 }
 
+export interface ProfileMod {
+  modId: string;
+  modName: string;
+  enabled: boolean;
+  loadOrder: number;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+  mods: ProfileMod[];
+}
+
+export interface ProfileSwitchResult {
+  profile: Profile;
+  disabledMods: number;
+  enabledMods: number;
+  guidance: string | null;
+  warnings: string[];
+}
+
 export interface ModPreview {
   dataUrl: string;
 }

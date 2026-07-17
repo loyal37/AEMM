@@ -45,6 +45,9 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Explicit namespace, TextureOverride/ShaderOverride Hash, match/handling, and direct resource-file evidence with official-template false-positive fixtures.
 - Live conflict totals, affected-only filtering, card/list markers, and per-mod participant/file/Profile-order details.
 - Shared deployment/conflict serialization plus post-enable conflict warnings and TanStack Query cache reconciliation.
+- Transactional Profile create, rename, copy, delete, and active-state queries with ordered desired memberships.
+- Rollback-capable full-set Profile switching through EFMI revoke tombstones, target fingerprint deployment, and one SQLite activity/manifest commit.
+- Profiles workspace, top-bar quick switch, Dashboard active Profile, mutation feedback, and deterministic browser-preview interactions.
 
 ### Security
 
@@ -60,9 +63,11 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Require a verified EFMI `Mods`/`DISABLED*` policy, create deployment files without overwrite, and keep partial/revoke directories excluded from loader discovery.
 - Refuse deployment cleanup on marker/root/inventory/Hash mismatch, links or extra paths; delete only manifest-listed files and expected empty parents instead of recursive directory contents.
 - Canonicalize and contain every deployed INI read, reject links/reparse components, require the on-disk AEMM marker to match SQLite, and cap conflict parsing at 4 MiB per file, 256 files per mod, and 64 MiB per report.
+- Protect the active Profile from deletion, forbid deployment records on inactive Profiles, and re-check switch snapshots inside the final database transaction.
 
 ### Changed
 
 - Report unknown game versions explicitly instead of presenting Unity engine or launcher application versions as the Endfield game version.
 - Preserve vanished repository records and user overrides by marking them broken instead of deleting database state during synchronization.
 - Expose AEMM Profile order while leaving the EFMI conflict winner unset until loader precedence is independently verified.
+- Process orphan active deployments before revoke tombstones during startup recovery, allowing interrupted Profile switches with shared mod IDs to converge safely.

@@ -17,6 +17,8 @@ import type {
   ModMutationResult,
   ModPreview,
   ModScanResult,
+  Profile,
+  ProfileSwitchResult,
 } from "../types/app";
 import {
   getPreviewDetails,
@@ -26,6 +28,14 @@ import {
   setPreviewFavorites,
   updatePreviewMetadata,
 } from "./previewMods";
+import {
+  copyPreviewProfile,
+  createPreviewProfile,
+  deletePreviewProfile,
+  getPreviewProfiles,
+  renamePreviewProfile,
+  switchPreviewProfile,
+} from "./previewProfiles";
 
 const previewSettings: AppSettings = {
   schemaVersion: 1,
@@ -190,6 +200,36 @@ export async function listInstalledMods(): Promise<ModListItem[]> {
 export async function getActiveConflictReport(): Promise<ConflictReport> {
   if (!isTauri()) return getPreviewConflictReport();
   return invoke<ConflictReport>("get_active_conflict_report");
+}
+
+export async function listProfiles(): Promise<Profile[]> {
+  if (!isTauri()) return getPreviewProfiles();
+  return invoke<Profile[]>("list_profiles");
+}
+
+export async function createProfile(name: string): Promise<Profile> {
+  if (!isTauri()) return createPreviewProfile(name);
+  return invoke<Profile>("create_profile", { request: { name } });
+}
+
+export async function renameProfile(profileId: string, name: string): Promise<Profile> {
+  if (!isTauri()) return renamePreviewProfile(profileId, name);
+  return invoke<Profile>("rename_profile", { request: { profileId, name } });
+}
+
+export async function copyProfile(sourceProfileId: string, name: string): Promise<Profile> {
+  if (!isTauri()) return copyPreviewProfile(sourceProfileId, name);
+  return invoke<Profile>("copy_profile", { request: { sourceProfileId, name } });
+}
+
+export async function deleteProfile(profileId: string): Promise<void> {
+  if (!isTauri()) return deletePreviewProfile(profileId);
+  return invoke<void>("delete_profile", { request: { profileId } });
+}
+
+export async function switchProfile(profileId: string): Promise<ProfileSwitchResult> {
+  if (!isTauri()) return switchPreviewProfile(profileId);
+  return invoke<ProfileSwitchResult>("switch_profile", { request: { profileId } });
 }
 
 export async function getModDetails(modId: string): Promise<ModDetails> {

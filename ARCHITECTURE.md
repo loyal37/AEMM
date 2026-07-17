@@ -200,11 +200,25 @@ Profiles store enabled mod IDs and stable load-order positions. Switching profil
 
 1. snapshot current state;
 2. validate the target profile and all referenced mods;
-3. detect conflicts and missing content;
-4. revoke no-longer-enabled deployments;
-5. deploy newly enabled content in planned order;
-6. update profile state in one database transaction;
-7. roll back filesystem operations if reconciliation fails.
+3. require every source enabled row to have an identical deployment manifest and every target mod to remain installed with a content fingerprint;
+4. marker-verify and atomically rename all source deployments to EFMI-excluded revoke tombstones;
+5. deploy the complete target set in stored order, verifying repository fingerprints and destination inventories;
+6. atomically replace source deployment records with target records and update `app_state.active_profile_id` without changing either Profile's desired memberships;
+7. finalize source tombstones after commit, or remove target deployments and restore source tombstones if any pre-commit step fails.
+
+The complete-set transition is intentional for `efmi.copy.v1`: active directory names are stable per mod (`AEMM_<mod UUID>`) and the ownership marker includes the Profile ID. Transferring a shared directory in place would require a separate crash-safe marker/database protocol. The current flow favors a verifiable rollback boundary over that optimization.
+
+```mermaid
+flowchart LR
+  Source["Source active directories"] --> Quarantine["DISABLED_AEMM_REVOKE tombstones"]
+  Quarantine --> Target["Deploy target Profile in saved order"]
+  Target --> Commit["One SQLite switch transaction"]
+  Commit --> Cleanup["Finalize source tombstones"]
+  Target -. "error" .-> RemoveTarget["Rollback target deployments"]
+  RemoveTarget --> RestoreSource["Restore source tombstones"]
+```
+
+`ProfileService`, `DeploymentService`, and `ConflictService` share the deployment operation lock. `ProfileStore` additionally checks active IDs, desired memberships, and manifest equality inside its own transactions. Empty-to-empty switches can commit without a loader; any filesystem reconciliation requires a freshly validated EFMI root resolved by `GameService`.
 
 ## Core data model
 

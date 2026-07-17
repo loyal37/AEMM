@@ -44,7 +44,13 @@ pub fn run() {
             commands::mod_commands::get_mod_preview,
             commands::mod_commands::open_mod_directory,
             commands::mod_commands::update_local_mod_metadata,
-            commands::conflict_commands::get_active_conflict_report
+            commands::conflict_commands::get_active_conflict_report,
+            commands::profile_commands::list_profiles,
+            commands::profile_commands::create_profile,
+            commands::profile_commands::rename_profile,
+            commands::profile_commands::copy_profile,
+            commands::profile_commands::delete_profile,
+            commands::profile_commands::switch_profile
         ])
         .run(tauri::generate_context!());
 

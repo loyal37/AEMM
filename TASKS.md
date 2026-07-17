@@ -68,8 +68,10 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 8 — Profiles
 
-- [ ] Implement create/delete/rename/copy/switch.
-- [ ] Implement rollback-capable profile reconciliation.
+- [x] Implement validated create/delete/rename/copy and live active-Profile queries.
+- [x] Implement rollback-capable full-set Profile reconciliation and crash-recovery ordering.
+- [x] Add Profiles workspace, top-bar quick switch, Dashboard state, browser-preview interactions, and 1440/960 visual coverage.
+- [x] Run production build, strict Clippy, 65 backend tests, database/recovery review, and interaction checks.
 
 ## Phase 9 — UX completion
 

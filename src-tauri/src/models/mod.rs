@@ -33,4 +33,7 @@ pub use mod_scan::{
     ModDeploymentMutationResult, ModDetails, ModFileDetails, ModListItem, ModMutationResult,
     ModPreview, ModScanResult, SetModFavorite, SetModsEnabled, UpdateLocalModMetadata,
 };
-pub use profile::{Profile, ProfileMod};
+pub use profile::{
+    CopyProfile, CreateProfile, Profile, ProfileMod, ProfileOperation, ProfileSwitchResult,
+    RenameProfile,
+};

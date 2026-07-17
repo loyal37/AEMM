@@ -5,6 +5,7 @@ import type {
   ModListItem,
   ModPreview,
 } from "../types/app";
+import { isPreviewModEnabled } from "./previewProfiles";
 
 const names = [
   "佩丽卡 · 深海礼装",
@@ -40,7 +41,7 @@ function baseMods(): ModListItem[] {
       category,
       previewPath: "preview.png",
       favorite: favoriteOverrides.get(id) ?? index % 5 === 0,
-      enabled: index % 4 === 1,
+      enabled: isPreviewModEnabled(id),
       sizeBytes: 2_400_000 + index * 731_113,
       fileCount: 8 + (index % 27),
       installedAt: 1_752_000_000 - index * 86_400,

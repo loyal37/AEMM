@@ -67,6 +67,9 @@ pub enum AppError {
     #[error("mod conflict analysis failed: {0}")]
     Conflict(String),
 
+    #[error("profile operation failed: {0}")]
+    Profile(String),
+
     #[error("stored application data is inconsistent: {0}")]
     DataIntegrity(String),
 }

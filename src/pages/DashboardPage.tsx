@@ -14,12 +14,14 @@ import { useConflictReport } from "../features/conflicts/useConflictReport";
 import { useGameStatus, useLaunchGame } from "../features/game/useGameManager";
 import { formatTimestamp } from "../features/mods/modQuery";
 import { useInstalledMods } from "../features/mods/useModManager";
+import { useProfiles } from "../features/profiles/useProfiles";
 import { commandErrorMessage } from "../lib/tauri";
 
 export function DashboardPage() {
   const bootstrap = useAppBootstrap();
   const gameStatus = useGameStatus();
   const mods = useInstalledMods();
+  const profiles = useProfiles();
   const conflicts = useConflictReport();
   const launch = useLaunchGame();
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
@@ -32,6 +34,7 @@ export function DashboardPage() {
     ? `${installation.installationRoot} · 游戏版本 ${installation.version.value ?? "未知"}`
     : "可在设置中自动检测鹰角启动器安装位置，或手动选择游戏目录。";
   const installedMods = mods.data ?? [];
+  const activeProfile = profiles.data?.find((profile) => profile.isActive);
   const recentMods = [...installedMods]
     .sort((left, right) => right.installedAt - left.installedAt)
     .slice(0, 4);
@@ -184,6 +187,12 @@ export function DashboardPage() {
               <dt>SQLite 数据库</dt>
               <dd className={databaseReady ? "status-ok" : "status-muted"}>
                 {databaseReady ? "就绪" : "等待桌面启动"}
+              </dd>
+            </div>
+            <div>
+              <dt>当前 Profile</dt>
+              <dd className={activeProfile ? "status-ok" : "status-muted"}>
+                {activeProfile?.name ?? "正在读取…"}
               </dd>
             </div>
             <div>

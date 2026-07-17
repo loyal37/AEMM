@@ -8,11 +8,11 @@ use crate::{
         deployment::{EFMI_COPY_STRATEGY_ID, EfmiCopyDeploymentStrategy, ModDeploymentStrategy},
         mods::{RepositoryInitializationPolicy, RepositoryRelativePath, RepositoryRoot},
     },
-    database::{Database, DeploymentStore},
+    database::{Database, DeploymentStore, ProfileStore},
     errors::AppError,
     models::{
         DeploymentContext, DeploymentManifest, DeploymentRevokeReceipt,
-        ModDeploymentMutationResult, ModLifecycleState,
+        ModDeploymentMutationResult, ModLifecycleState, ProfileSwitchResult,
     },
 };
 
@@ -27,6 +27,7 @@ pub struct DeploymentService {
     settings: SettingsService,
     default_repository_path: PathBuf,
     store: DeploymentStore,
+    profiles: ProfileStore,
     operation_lock: Arc<Mutex<()>>,
 }
 
@@ -40,6 +41,7 @@ impl DeploymentService {
             settings,
             default_repository_path,
             store: DeploymentStore::new(database.pool().clone()),
+            profiles: ProfileStore::new(database.pool().clone()),
             operation_lock: Arc::new(Mutex::new(())),
         }
     }
@@ -82,6 +84,126 @@ impl DeploymentService {
         })
     }
 
+    pub async fn switch_profile(
+        &self,
+        efmi_root: Result<PathBuf, AppError>,
+        target_profile_id: Uuid,
+    ) -> Result<ProfileSwitchResult, AppError> {
+        let _guard = self.operation_lock.lock().await;
+        let plan = self.profiles.prepare_switch(target_profile_id).await?;
+        if plan.source_profile_id == plan.target_profile_id {
+            return Ok(ProfileSwitchResult {
+                profile: self.profiles.get(target_profile_id).await?,
+                disabled_mods: 0,
+                enabled_mods: 0,
+                guidance: None,
+                warnings: plan.warnings,
+            });
+        }
+
+        if plan.source_manifests.is_empty() && plan.target_mod_ids.is_empty() {
+            self.profiles.commit_switch(&plan, &[]).await?;
+            tracing::info!(
+                source_profile_id = %plan.source_profile_id,
+                target_profile_id = %plan.target_profile_id,
+                "empty profile switched without a deployment target"
+            );
+            return Ok(ProfileSwitchResult {
+                profile: self.profiles.get(target_profile_id).await?,
+                disabled_mods: 0,
+                enabled_mods: 0,
+                guidance: None,
+                warnings: plan.warnings,
+            });
+        }
+
+        let strategy = EfmiCopyDeploymentStrategy::open(efmi_root?).await?;
+        let repository = self.repository_root().await?;
+        let mut warnings = plan.warnings.clone();
+        let mut source_receipts = Vec::with_capacity(plan.source_manifests.len());
+        for manifest in &plan.source_manifests {
+            let revoke_plan = match strategy.plan_revoke(manifest).await {
+                Ok(revoke_plan) => revoke_plan,
+                Err(error) => {
+                    rollback_revokes(&strategy, &source_receipts).await;
+                    return Err(error);
+                }
+            };
+            warnings.extend(revoke_plan.warnings);
+            match strategy.begin_revoke(manifest).await {
+                Ok(receipt) => source_receipts.push(receipt),
+                Err(error) => {
+                    rollback_revokes(&strategy, &source_receipts).await;
+                    return Err(error);
+                }
+            }
+        }
+
+        let mut target_manifests = Vec::with_capacity(plan.target_mod_ids.len());
+        for mod_id in &plan.target_mod_ids {
+            let context = match self
+                .deployment_context(&repository, plan.target_profile_id, &strategy, *mod_id)
+                .await
+            {
+                Ok(context) => context,
+                Err(error) => {
+                    rollback_profile_switch(&strategy, &target_manifests, &source_receipts).await;
+                    return Err(error);
+                }
+            };
+            let deployment_plan = match strategy.plan_deploy(&context).await {
+                Ok(deployment_plan) => deployment_plan,
+                Err(error) => {
+                    rollback_profile_switch(&strategy, &target_manifests, &source_receipts).await;
+                    return Err(error);
+                }
+            };
+            warnings.extend(deployment_plan.warnings.iter().cloned());
+            match strategy.deploy(&context, deployment_plan).await {
+                Ok(manifest) => target_manifests.push(manifest),
+                Err(error) => {
+                    rollback_profile_switch(&strategy, &target_manifests, &source_receipts).await;
+                    return Err(error);
+                }
+            }
+        }
+
+        if let Err(error) = self.profiles.commit_switch(&plan, &target_manifests).await {
+            rollback_profile_switch(&strategy, &target_manifests, &source_receipts).await;
+            return Err(error);
+        }
+
+        for receipt in &source_receipts {
+            if let Err(error) = strategy.finalize_revoke(receipt).await {
+                warnings.push(format!(
+                    "源 Profile 的模组 {} 已撤销，但隔离目录清理将在下次启动重试。",
+                    receipt.manifest.mod_id
+                ));
+                tracing::warn!(deployment_id = %receipt.manifest.id, error = %error, "profile switch committed but source cleanup is pending recovery");
+            }
+        }
+        warnings = deduplicate_warnings(warnings);
+        tracing::info!(
+            source_profile_id = %plan.source_profile_id,
+            target_profile_id = %plan.target_profile_id,
+            disabled = source_receipts.len(),
+            enabled = target_manifests.len(),
+            "profile switch committed"
+        );
+        Ok(ProfileSwitchResult {
+            profile: self.profiles.get(target_profile_id).await?,
+            disabled_mods: u64::try_from(source_receipts.len()).map_err(|_| {
+                AppError::DataIntegrity("Profile 撤销数量超出支持范围。".to_owned())
+            })?,
+            enabled_mods: u64::try_from(target_manifests.len()).map_err(|_| {
+                AppError::DataIntegrity("Profile 启用数量超出支持范围。".to_owned())
+            })?,
+            guidance: (!source_receipts.is_empty() || !target_manifests.is_empty())
+                .then(|| LOADER_REFRESH_GUIDANCE.to_owned()),
+            warnings,
+        })
+    }
+
     pub async fn recover_pending(&self, efmi_root: PathBuf) -> Result<(), AppError> {
         let _guard = self.operation_lock.lock().await;
         let strategy = EfmiCopyDeploymentStrategy::open(efmi_root).await?;
@@ -90,7 +212,12 @@ impl DeploymentService {
             .iter()
             .map(|manifest| (manifest.id, manifest.clone()))
             .collect::<HashMap<_, _>>();
-        let owned = strategy.owned_directories().await?;
+        let mut owned = strategy.owned_directories().await?;
+        owned.sort_by(|(left, _), (right, _)| {
+            recovery_rank(left)
+                .cmp(&recovery_rank(right))
+                .then_with(|| left.cmp(right))
+        });
 
         for (directory, manifest) in owned {
             if manifest.strategy_id != EFMI_COPY_STRATEGY_ID {
@@ -153,29 +280,15 @@ impl DeploymentService {
                 strategy.verify(&manifest).await?;
                 continue;
             }
-            let source = self.store.deployment_source(*mod_id).await?;
-            if source.lifecycle_state != ModLifecycleState::Installed {
-                rollback_deployments(strategy, &manifests).await;
-                return Err(AppError::Deployment(format!(
-                    "模组 {mod_id} 当前状态不是“已安装”，不能启用。"
-                )));
-            }
-            let repository_relative = RepositoryRelativePath::new(source.repository_path)?;
-            let mod_root = match repository.resolve_existing_mod_root(&repository_relative) {
-                Ok(path) => path,
+            let context = match self
+                .deployment_context(&repository, profile_id, strategy, *mod_id)
+                .await
+            {
+                Ok(context) => context,
                 Err(error) => {
                     rollback_deployments(strategy, &manifests).await;
                     return Err(error);
                 }
-            };
-            let context = DeploymentContext {
-                profile_id,
-                mod_id: source.mod_id,
-                repository_root: repository.path().to_path_buf(),
-                mod_root,
-                destination_root: strategy.mods_root().to_path_buf(),
-                source_content_fingerprint: source.content_fingerprint,
-                files: Vec::new(),
             };
             let plan = match strategy.plan_deploy(&context).await {
                 Ok(plan) => plan,
@@ -250,6 +363,32 @@ impl DeploymentService {
         Ok((receipts.len(), deduplicate_warnings(warnings)))
     }
 
+    async fn deployment_context(
+        &self,
+        repository: &RepositoryRoot,
+        profile_id: Uuid,
+        strategy: &EfmiCopyDeploymentStrategy,
+        mod_id: Uuid,
+    ) -> Result<DeploymentContext, AppError> {
+        let source = self.store.deployment_source(mod_id).await?;
+        if source.lifecycle_state != ModLifecycleState::Installed {
+            return Err(AppError::Deployment(format!(
+                "模组 {mod_id} 当前状态不是“已安装”，不能启用。"
+            )));
+        }
+        let repository_relative = RepositoryRelativePath::new(source.repository_path)?;
+        let mod_root = repository.resolve_existing_mod_root(&repository_relative)?;
+        Ok(DeploymentContext {
+            profile_id,
+            mod_id: source.mod_id,
+            repository_root: repository.path().to_path_buf(),
+            mod_root,
+            destination_root: strategy.mods_root().to_path_buf(),
+            source_content_fingerprint: source.content_fingerprint,
+            files: Vec::new(),
+        })
+    }
+
     async fn repository_root(&self) -> Result<RepositoryRoot, AppError> {
         let settings = self.settings.get().await;
         let configured = settings.storage.repository_path;
@@ -283,6 +422,15 @@ async fn rollback_revokes(
             tracing::error!(deployment_id = %receipt.manifest.id, error = %error, "failed to roll back EFMI revoke; startup recovery will retry");
         }
     }
+}
+
+async fn rollback_profile_switch(
+    strategy: &EfmiCopyDeploymentStrategy,
+    target_manifests: &[DeploymentManifest],
+    source_receipts: &[DeploymentRevokeReceipt],
+) {
+    rollback_deployments(strategy, target_manifests).await;
+    rollback_revokes(strategy, source_receipts).await;
 }
 
 fn validate_batch(mod_ids: Vec<Uuid>) -> Result<Vec<Uuid>, AppError> {
@@ -319,15 +467,30 @@ fn paths_equal(left: &std::path::Path, right: &std::path::Path) -> bool {
         .eq_ignore_ascii_case(right.to_string_lossy().trim_end_matches(['\\', '/']))
 }
 
+fn recovery_rank(directory: &std::path::Path) -> u8 {
+    let name = directory.to_string_lossy();
+    if name.starts_with("DISABLED_AEMM_PENDING_") {
+        0
+    } else if name.starts_with("AEMM_") {
+        1
+    } else if name.starts_with("DISABLED_AEMM_REVOKE_") {
+        2
+    } else {
+        3
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, fs, path::Path};
+
+    use uuid::Uuid;
 
     use crate::{
         core::mods::{
             FileSystemModScanner, ModScanner, RepositoryInitializationPolicy, RepositoryRoot,
         },
-        database::{Database, DeploymentStore, ModStore},
+        database::{Database, DeploymentStore, ModStore, ProfileStore},
         services::{AppPaths, DeploymentService, SettingsService},
     };
 
@@ -521,6 +684,188 @@ mod tests {
                 .join(&manifest.destination_directory)
                 .exists()
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn switches_profiles_and_preserves_each_desired_mod_set()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let (service, database, paths, loader) = service_fixture(root.path()).await?;
+        let first_root = paths.repository_directory.join("first-mod");
+        fs::create_dir(&first_root)?;
+        fs::write(first_root.join("main.ini"), b"[TextureOverrideFirst]\n")?;
+        let second_root = paths.repository_directory.join("second-mod");
+        fs::create_dir(&second_root)?;
+        fs::write(second_root.join("main.ini"), b"[TextureOverrideSecond]\n")?;
+        let mods = scan_repository(&database, &paths.repository_directory).await?;
+        let first_id = mods
+            .iter()
+            .find(|item| item.repository_path == Path::new("first-mod"))
+            .ok_or_else(|| std::io::Error::other("first fixture missing"))?
+            .id;
+        let second_id = mods
+            .iter()
+            .find(|item| item.repository_path == Path::new("second-mod"))
+            .ok_or_else(|| std::io::Error::other("second fixture missing"))?
+            .id;
+        service
+            .set_enabled(loader.clone(), vec![first_id], true)
+            .await?;
+
+        let profiles = ProfileStore::new(database.pool().clone());
+        let source_profile_id = DeploymentStore::new(database.pool().clone())
+            .active_profile_id()
+            .await?;
+        let target_profile_id = Uuid::new_v4();
+        profiles.create(target_profile_id, "Second profile").await?;
+        sqlx::query(
+            "INSERT INTO profile_mods (profile_id, mod_id, enabled, load_order)
+             VALUES (?, ?, 1, 0)",
+        )
+        .bind(target_profile_id.to_string())
+        .bind(second_id.to_string())
+        .execute(database.pool())
+        .await?;
+
+        let switched = service
+            .switch_profile(Ok(loader.clone()), target_profile_id)
+            .await?;
+        assert_eq!(switched.disabled_mods, 1);
+        assert_eq!(switched.enabled_mods, 1);
+        assert!(switched.profile.is_active);
+        assert!(
+            !loader
+                .join("Mods")
+                .join(format!("AEMM_{}", first_id.simple()))
+                .exists()
+        );
+        assert!(
+            loader
+                .join("Mods")
+                .join(format!("AEMM_{}", second_id.simple()))
+                .is_dir()
+        );
+        let source_desired: i64 = sqlx::query_scalar(
+            "SELECT enabled FROM profile_mods WHERE profile_id = ? AND mod_id = ?",
+        )
+        .bind(source_profile_id.to_string())
+        .bind(first_id.to_string())
+        .fetch_one(database.pool())
+        .await?;
+        assert_eq!(source_desired, 1);
+
+        service
+            .switch_profile(Ok(loader.clone()), source_profile_id)
+            .await?;
+        assert!(
+            loader
+                .join("Mods")
+                .join(format!("AEMM_{}", first_id.simple()))
+                .is_dir()
+        );
+        assert!(
+            !loader
+                .join("Mods")
+                .join(format!("AEMM_{}", second_id.simple()))
+                .exists()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_profile_deployment_restores_source_profile()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let (service, database, paths, loader) = service_fixture(root.path()).await?;
+        let valid_root = paths.repository_directory.join("valid-mod");
+        fs::create_dir(&valid_root)?;
+        fs::write(valid_root.join("main.ini"), b"[TextureOverrideValid]\n")?;
+        let invalid_root = paths.repository_directory.join("invalid-mod");
+        fs::create_dir(&invalid_root)?;
+        fs::write(invalid_root.join("readme.txt"), b"not an EFMI mod")?;
+        let mods = scan_repository(&database, &paths.repository_directory).await?;
+        let valid_id = mods
+            .iter()
+            .find(|item| item.repository_path == Path::new("valid-mod"))
+            .ok_or_else(|| std::io::Error::other("valid fixture missing"))?
+            .id;
+        let invalid_id = mods
+            .iter()
+            .find(|item| item.repository_path == Path::new("invalid-mod"))
+            .ok_or_else(|| std::io::Error::other("invalid fixture missing"))?
+            .id;
+        service
+            .set_enabled(loader.clone(), vec![valid_id], true)
+            .await?;
+        let deployment_store = DeploymentStore::new(database.pool().clone());
+        let source_profile_id = deployment_store.active_profile_id().await?;
+        let target_profile_id = Uuid::new_v4();
+        ProfileStore::new(database.pool().clone())
+            .create(target_profile_id, "Broken target")
+            .await?;
+        sqlx::query(
+            "INSERT INTO profile_mods (profile_id, mod_id, enabled, load_order)
+             VALUES (?, ?, 1, 0)",
+        )
+        .bind(target_profile_id.to_string())
+        .bind(invalid_id.to_string())
+        .execute(database.pool())
+        .await?;
+
+        assert!(
+            service
+                .switch_profile(Ok(loader.clone()), target_profile_id)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            deployment_store.active_profile_id().await?,
+            source_profile_id
+        );
+        assert!(
+            deployment_store
+                .manifest(source_profile_id, valid_id)
+                .await?
+                .is_some()
+        );
+        assert!(
+            deployment_store
+                .manifest(target_profile_id, invalid_id)
+                .await?
+                .is_none()
+        );
+        assert!(
+            loader
+                .join("Mods")
+                .join(format!("AEMM_{}", valid_id.simple()))
+                .is_dir()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn switches_between_empty_profiles_without_a_loader()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let (service, database, _, _) = service_fixture(root.path()).await?;
+        let target_profile_id = Uuid::new_v4();
+        ProfileStore::new(database.pool().clone())
+            .create(target_profile_id, "Empty target")
+            .await?;
+
+        let result = service
+            .switch_profile(
+                Err(crate::errors::AppError::NotAvailable(
+                    "loader is not configured".to_owned(),
+                )),
+                target_profile_id,
+            )
+            .await?;
+
+        assert!(result.profile.is_active);
+        assert_eq!(result.disabled_mods, 0);
+        assert_eq!(result.enabled_mods, 0);
         Ok(())
     }
 }

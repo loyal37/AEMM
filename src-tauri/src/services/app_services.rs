@@ -8,12 +8,13 @@ use crate::{
         AppBootstrap, AppSettings, ConflictReport, DetectedGameInstallation, GameLaunchResult,
         GameStatus, LaunchMode, LocalModMetadata, ModDeploymentMutationResult, ModDetails,
         ModImportPlan, ModInstallResult, ModListItem, ModMutationResult, ModPreview, ModScanResult,
+        Profile, ProfileSwitchResult,
     },
 };
 
 use super::{
-    AppPaths, ConflictService, DeploymentService, GameService, ModService, SettingsService,
-    logging::initialize_logging,
+    AppPaths, ConflictService, DeploymentService, GameService, ModService, ProfileService,
+    SettingsService, logging::initialize_logging,
 };
 
 pub struct AppServices {
@@ -23,6 +24,7 @@ pub struct AppServices {
     mods: ModService,
     deployment: DeploymentService,
     conflicts: ConflictService,
+    profiles: ProfileService,
     database: Database,
     _logging_guard: super::logging::LoggingGuard,
 }
@@ -60,6 +62,7 @@ impl AppServices {
             paths.repository_directory.clone(),
         );
         let conflicts = ConflictService::new(&database, deployment.operation_lock());
+        let profiles = ProfileService::new(&database, deployment.operation_lock());
         match game.validated_efmi_root().await {
             Ok(efmi_root) => {
                 if let Err(error) = deployment.recover_pending(efmi_root).await {
@@ -81,6 +84,7 @@ impl AppServices {
             mods,
             deployment,
             conflicts,
+            profiles,
             database,
             _logging_guard: logging_guard,
         })
@@ -230,6 +234,42 @@ impl AppServices {
 
     pub async fn active_conflict_report(&self) -> Result<ConflictReport, AppError> {
         self.conflicts.analyze_active().await
+    }
+
+    pub async fn list_profiles(&self) -> Result<Vec<Profile>, AppError> {
+        self.profiles.list().await
+    }
+
+    pub async fn create_profile(&self, name: String) -> Result<Profile, AppError> {
+        self.profiles.create(name).await
+    }
+
+    pub async fn rename_profile(
+        &self,
+        profile_id: uuid::Uuid,
+        name: String,
+    ) -> Result<Profile, AppError> {
+        self.profiles.rename(profile_id, name).await
+    }
+
+    pub async fn copy_profile(
+        &self,
+        source_profile_id: uuid::Uuid,
+        name: String,
+    ) -> Result<Profile, AppError> {
+        self.profiles.copy(source_profile_id, name).await
+    }
+
+    pub async fn delete_profile(&self, profile_id: uuid::Uuid) -> Result<(), AppError> {
+        self.profiles.delete(profile_id).await
+    }
+
+    pub async fn switch_profile(
+        &self,
+        profile_id: uuid::Uuid,
+    ) -> Result<ProfileSwitchResult, AppError> {
+        let efmi_root = self.game.validated_efmi_root().await;
+        self.deployment.switch_profile(efmi_root, profile_id).await
     }
 
     pub async fn mod_preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {
