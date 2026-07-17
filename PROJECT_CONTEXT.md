@@ -14,7 +14,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Current implementation status
 
-- Phase 1 foundation through Phase 6 safe EFMI deployment/enable-disable are implemented and validated locally on Windows 11.
+- Phase 1 foundation through Phase 7 conflict detection are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
 - The local EFMI loader layout at `C:\Users\MR\Desktop\EFMI` has been inspected read-only.
 - The Tauri development application starts successfully and creates a versioned `config.json`, migrated `mods.db`, repository/staging roots, and a rolling log file.
@@ -85,6 +85,18 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - Active-profile state in migration `0003_deployment_state.sql`, transactional deployment records/profile flags, safe single and 256-item batch enable/disable, enabled filters/switches, detail actions, F10 guidance, and live Dashboard counts.
 - Fifty-five default Rust tests plus an opt-in compatibility harness. A checksum-verified public [EFMI RabbitFX](https://gamebanana.com/mods/651557) v2.2 package (`GameBanana file 1721477`, MD5 `a13b3c546a8ffbc94e20c9b6b8c5c6fd`) passed real ZIP staging, root detection, EFMI deployment, verification, revoke, and cleanup without executing any content; the downloaded copy was removed afterward.
 
+### Phase 7 delivered
+
+- A plugin-style `ModConflictDetector` with independent `deployment.path.v1` and `efmi.ini.v1` analyzers. The detector consumes an immutable active-Profile deployment snapshot rather than UI state or guessed repository paths.
+- Exact target-path collision detection based on destination root, deployment directory, and case-insensitive Windows-relative target path. The current isolated EFMI copy strategy correctly produces no file-path collision unless two manifests truly address the same deployed file.
+- Bounded, read-only EFMI INI analysis for explicit namespace collisions and overlapping `TextureOverride`/`ShaderOverride` Hashes, including source file, section, match constraints, handling mode, and directly referenced resource filenames as evidence.
+- False-positive avoidance based on the official [EFMI Tools generated template](https://github.com/SpectrumQT/EFMI-Tools/blob/main/efmi-tools/templates/per_component.ini.j2): common per-file sections such as `Constants`, `Present`, and `ResourceModName` are not treated as global conflicts.
+- Canonical deployed-root containment, component-by-component link/reparse rejection, 4 MiB per-file, 256 INIs per-mod, and 64 MiB per-report bounds. Parsing runs on a blocking worker and supports UTF-8/UTF-16 BOMs with explicit lossy-decoding warnings.
+- A transactional `ConflictStore` projection that rejects enabled Profile rows without matching deployment manifests, plus a shared deployment/conflict lock so analysis cannot race enable, disable, recovery, or Profile reconciliation.
+- Live Dashboard counts, a Mods conflict report, affected-only filtering, card/list warnings, and per-mod details showing participating mods, exact evidence, and current AEMM Profile positions.
+- Actual EFMI winner selection remains intentionally unset. The UI labels Profile order separately and states that recursive loader/Hash winner semantics are not verified rather than presenting a fabricated priority.
+- Sixty default Rust tests pass, including official-template-shaped fixtures, deployment-marker tampering, resource evidence, path collisions, false-positive prevention, and ordered database snapshots. Browser preview checks at 1440×1000 and 960×800 reported no page errors or horizontal overflow.
+
 ## Important decisions
 
 1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
@@ -111,6 +123,9 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 22. EFMI's verified `DISABLED*` exclusion is the transaction boundary: work-in-progress copies and revoke tombstones are never visible as active mods. The database is never allowed to authorize deletion by itself; the on-disk ownership marker and exact file inventory must also agree.
 23. Deployment lists are immutable Hash/size manifests. AEMM refuses automatic revoke when deployed content has been changed or augmented, and removal enumerates only manifest paths so a raced-in extra path is never recursively deleted.
 24. The singleton `app_state.active_profile_id` is introduced before full Profile UI so Phase 6 never hard-codes the default Profile in queries or deployment services. Phase 8 will reuse this state for reconciliation.
+25. Conflict analysis reads the immutable manifests and currently deployed INI files for enabled mods. It does not infer runtime targets from repository filenames, and it shares the deployment mutation lock to avoid analyzing a half-completed filesystem transition.
+26. Repeated ordinary section names are valid in the EFMI Tools output because each included INI has its own namespace. Only explicit namespace collisions, overlapping override Hashes, and actual destination paths are reported by Phase 7.
+27. `profile_mods.load_order` is exposed as the current AEMM arrangement, not as a verified EFMI winner rule. Every Phase 7 `winning_mod_id` remains `None` until upstream source behavior and representative runtime fixtures prove deterministic precedence.
 
 ## EFMI observations (read-only, 2026-07-15)
 
@@ -132,18 +147,17 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - The CN Hypergryph Launcher registry/install layout is verified on one machine. International launcher manifests, paths, executable identity markers, and region detection remain unverified.
 - No authoritative game-version file or launcher manifest has been identified. The launcher log/version and executable product version are not treated as the game version.
 - The inspected EFMI package is intended to integrate with XXMI Launcher, while its local `3DMigotoLoader.exe` and stale `Loader.launch` also expose a direct loader path. XXMI protocol support still needs safe verification.
-- 3DMigoto conflict semantics can involve INI section names, hashes, resources, and command lists—not only identical relative file paths. The first conflict engine must therefore support analyzer plugins.
+- Phase 7 covers actual deployed paths, explicit namespaces, override Hashes, match constraints, handling, and direct resource-file references. Conditional command-list interactions, fuzzy resource matching, cross-file dependency semantics, and future EFMI syntax still need additional analyzer versions and fixtures.
 - EFMI recursive include/load ordering is not yet verified. AEMM must not claim deterministic load priority until this is tested against real mods and the loader.
 - Symlink/junction support, required privileges, anti-cheat implications, and loader compatibility need safe empirical validation.
 - No representative mod archives were present in the supplied EFMI folder. A public RabbitFX v2.2 package has since validated the real archive/root/deploy/revoke path, but a representative EFMI Tools-generated character model package with Meshes/Textures is still needed before finalizing resource-level conflict semantics.
 - Phase 3 does not infer EFMI deployment targets or loader priority from scanned files. File roles are descriptive only until real mod fixtures establish adapter-specific semantics.
 - Manual edits that create duplicate case-insensitive author IDs cause the scan transaction to fail with an actionable metadata error, preserving the previously consistent database state.
-- Phase 4 does not expose an enable switch or claim conflict results because deployment/profile state and verified conflict semantics belong to Phases 6 and 7.
 - Preview images larger than 2 MiB or with unsupported signatures fall back to a generated placeholder. A managed thumbnail cache can be added later if real fixtures require large-source downscaling.
 
 ## Next plan
 
-1. Phase 7: implement target-path and EFMI INI/resource analyzers, conflict persistence/UI, and only the load-order semantics proven by loader fixtures.
+1. Phase 8: implement Profile create/delete/rename/copy, ordered memberships, and rollback-capable switching through the existing deployment transaction boundary.
 2. Collect anonymized international game layouts and a representative EFMI Tools-generated character model fixture before finalizing resource-level conflict priority.
 3. Identify an authoritative CN/global game-version source without parsing stale logs.
 4. Decide the repository license before accepting external source redistribution or contributions.

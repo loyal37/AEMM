@@ -10,6 +10,7 @@ import {
 import { Link } from "react-router";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
+import { useConflictReport } from "../features/conflicts/useConflictReport";
 import { useGameStatus, useLaunchGame } from "../features/game/useGameManager";
 import { formatTimestamp } from "../features/mods/modQuery";
 import { useInstalledMods } from "../features/mods/useModManager";
@@ -19,6 +20,7 @@ export function DashboardPage() {
   const bootstrap = useAppBootstrap();
   const gameStatus = useGameStatus();
   const mods = useInstalledMods();
+  const conflicts = useConflictReport();
   const launch = useLaunchGame();
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const databaseReady = bootstrap.data?.databaseReady === true;
@@ -52,7 +54,15 @@ export function DashboardPage() {
       icon: CheckCircle2,
       tone: "green",
     },
-    { label: "检测到冲突", value: "—", hint: "Phase 7 接入分析结果", icon: AlertTriangle, tone: "amber" },
+    {
+      label: "检测到冲突",
+      value: conflicts.isPending ? "—" : conflicts.isError ? "!" : String(conflicts.data?.conflicts.length ?? 0),
+      hint: conflicts.isError
+        ? "冲突分析暂不可用"
+        : `${conflicts.data?.affectedMods ?? 0} 个启用模组受影响`,
+      icon: AlertTriangle,
+      tone: "amber",
+    },
   ];
 
   return (

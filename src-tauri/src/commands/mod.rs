@@ -1,4 +1,5 @@
 pub mod app_commands;
+pub mod conflict_commands;
 pub mod game_commands;
 pub mod mod_commands;
 pub mod profile_commands;

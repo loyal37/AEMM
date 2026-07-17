@@ -5,14 +5,14 @@ use crate::{
     database::Database,
     errors::AppError,
     models::{
-        AppBootstrap, AppSettings, DetectedGameInstallation, GameLaunchResult, GameStatus,
-        LaunchMode, LocalModMetadata, ModDeploymentMutationResult, ModDetails, ModImportPlan,
-        ModInstallResult, ModListItem, ModMutationResult, ModPreview, ModScanResult,
+        AppBootstrap, AppSettings, ConflictReport, DetectedGameInstallation, GameLaunchResult,
+        GameStatus, LaunchMode, LocalModMetadata, ModDeploymentMutationResult, ModDetails,
+        ModImportPlan, ModInstallResult, ModListItem, ModMutationResult, ModPreview, ModScanResult,
     },
 };
 
 use super::{
-    AppPaths, DeploymentService, GameService, ModService, SettingsService,
+    AppPaths, ConflictService, DeploymentService, GameService, ModService, SettingsService,
     logging::initialize_logging,
 };
 
@@ -22,6 +22,7 @@ pub struct AppServices {
     game: GameService,
     mods: ModService,
     deployment: DeploymentService,
+    conflicts: ConflictService,
     database: Database,
     _logging_guard: super::logging::LoggingGuard,
 }
@@ -58,6 +59,7 @@ impl AppServices {
             &database,
             paths.repository_directory.clone(),
         );
+        let conflicts = ConflictService::new(&database, deployment.operation_lock());
         match game.validated_efmi_root().await {
             Ok(efmi_root) => {
                 if let Err(error) = deployment.recover_pending(efmi_root).await {
@@ -78,6 +80,7 @@ impl AppServices {
             game,
             mods,
             deployment,
+            conflicts,
             database,
             _logging_guard: logging_guard,
         })
@@ -189,10 +192,44 @@ impl AppServices {
         mod_ids: Vec<uuid::Uuid>,
         enabled: bool,
     ) -> Result<ModDeploymentMutationResult, AppError> {
+        let changed_mod_ids = mod_ids.clone();
         let efmi_root = self.game.validated_efmi_root().await?;
-        self.deployment
+        let mut result = self
+            .deployment
             .set_enabled(efmi_root, mod_ids, enabled)
-            .await
+            .await?;
+        if enabled && result.updated > 0 {
+            match self.conflicts.analyze_active().await {
+                Ok(report) => {
+                    let new_conflicts = report
+                        .conflicts
+                        .iter()
+                        .filter(|conflict| {
+                            conflict
+                                .participants
+                                .iter()
+                                .any(|participant| changed_mod_ids.contains(&participant.mod_id))
+                        })
+                        .count();
+                    if new_conflicts > 0 {
+                        result.warnings.push(format!(
+                            "启用后检测到 {new_conflicts} 组与本次模组相关的冲突，请查看冲突详情；EFMI 实际胜出顺序尚未验证。"
+                        ));
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error, diagnostic = ?error, "post-deployment conflict analysis failed");
+                    result.warnings.push(
+                        "模组已启用，但冲突分析未完成；请查看日志并在模组页面重试。".to_owned(),
+                    );
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    pub async fn active_conflict_report(&self) -> Result<ConflictReport, AppError> {
+        self.conflicts.analyze_active().await
     }
 
     pub async fn mod_preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {

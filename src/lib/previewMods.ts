@@ -1,4 +1,5 @@
 import type {
+  ConflictReport,
   LocalModMetadata,
   ModDetails,
   ModListItem,
@@ -62,6 +63,52 @@ export function getPreviewMods(): ModListItem[] {
         }
       : item;
   });
+}
+
+export function getPreviewConflictReport(): ConflictReport {
+  const enabled = getPreviewMods().filter((item) => item.enabled);
+  const first = enabled[0];
+  const second = enabled[1];
+  const participants = [first, second]
+    .filter((item): item is ModListItem => Boolean(item))
+    .map((item, index) => ({
+      modId: item.id,
+      modName: item.name,
+      loadOrder: index,
+      evidence: [
+        {
+          sourcePath: "mod.ini",
+          section: `[TextureOverride_Component${index}]`,
+          detail: "hash=48e5c5f7, match_index_count=120, handling=skip",
+        },
+      ],
+    }));
+  return {
+    profileId: "00000000-0000-0000-0000-000000000001",
+    generatedAt: 1_752_400_000,
+    enabledMods: enabled.length,
+    analyzedIniFiles: enabled.length,
+    affectedMods: participants.length,
+    conflicts:
+      participants.length >= 2
+        ? [
+            {
+              id: "conflict-preview-texture",
+              analyzerId: "efmi.ini.v1",
+              kind: "efmiTextureOverride",
+              severity: "warning",
+              resourceKey: "texture-hash:48e5c5f7",
+              summary: "多个已启用模组可能匹配同一 TextureOverride 资源 Hash。",
+              participants,
+              winningModId: null,
+            },
+          ]
+        : [],
+    loadOrderVerified: false,
+    loadOrderNote:
+      "列表显示 AEMM Profile 中保存的顺序；当前 EFMI 实际胜出规则尚未可靠验证。",
+    warnings: [],
+  };
 }
 
 export function setPreviewFavorites(modIds: string[], favorite: boolean): void {

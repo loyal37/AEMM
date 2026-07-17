@@ -61,9 +61,10 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
 ## Phase 7 — Conflict detection
 
-- [ ] Implement target-path analyzer.
-- [ ] Implement EFMI INI/resource analyzer from representative fixtures.
-- [ ] Add conflict UI and verified load-order semantics.
+- [x] Implement exact target-path analyzer over active deployment manifests.
+- [x] Implement bounded EFMI namespace/override/resource analyzer from official-template-shaped fixtures.
+- [x] Add Dashboard/list/detail conflict UI and explicitly unverified EFMI winner semantics.
+- [x] Run production build, strict Clippy, 60 backend tests, path/parser security review, and 1440/960 visual review.
 
 ## Phase 8 — Profiles
 

@@ -44,6 +44,10 @@ impl DeploymentService {
         }
     }
 
+    pub fn operation_lock(&self) -> Arc<Mutex<()>> {
+        Arc::clone(&self.operation_lock)
+    }
+
     pub async fn set_enabled(
         &self,
         efmi_root: PathBuf,

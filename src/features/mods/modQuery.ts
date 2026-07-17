@@ -9,6 +9,7 @@ export interface ModFilters {
   lifecycle: "all" | ModLifecycleState;
   deployment: "all" | "enabled" | "disabled";
   favoritesOnly: boolean;
+  conflictsOnly: boolean;
   sort: ModSort;
 }
 
@@ -18,6 +19,7 @@ export const defaultModFilters: ModFilters = {
   lifecycle: "all",
   deployment: "all",
   favoritesOnly: false,
+  conflictsOnly: false,
   sort: "updated",
 };
 
@@ -36,7 +38,11 @@ export function modCategories(mods: ModListItem[]): string[] {
   ).sort(nameCollator.compare);
 }
 
-export function applyModQuery(mods: ModListItem[], filters: ModFilters): ModListItem[] {
+export function applyModQuery(
+  mods: ModListItem[],
+  filters: ModFilters,
+  conflictedModIds: ReadonlySet<string> = new Set(),
+): ModListItem[] {
   const query = normalize(filters.query);
   return mods
     .filter((item) => {
@@ -45,6 +51,7 @@ export function applyModQuery(mods: ModListItem[], filters: ModFilters): ModList
       if (filters.deployment === "enabled" && !item.enabled) return false;
       if (filters.deployment === "disabled" && item.enabled) return false;
       if (filters.favoritesOnly && !item.favorite) return false;
+      if (filters.conflictsOnly && !conflictedModIds.has(item.id)) return false;
       if (!query) return true;
       return [item.name, item.author, item.category, item.logicalId, item.description]
         .filter((value): value is string => Boolean(value))

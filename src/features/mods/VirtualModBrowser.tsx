@@ -15,6 +15,7 @@ interface VirtualModBrowserProps {
   items: ModListItem[];
   viewMode: ModViewMode;
   selectedIds: Set<string>;
+  conflictedIds: ReadonlySet<string>;
   favoritePending: boolean;
   deploymentPending: boolean;
   deploymentAvailable: boolean;
@@ -27,6 +28,7 @@ export function VirtualModBrowser({
   items,
   viewMode,
   selectedIds,
+  conflictedIds,
   favoritePending,
   deploymentPending,
   deploymentAvailable,
@@ -105,6 +107,7 @@ export function VirtualModBrowser({
                     item={item}
                     key={item.id}
                     selected={selectedIds.has(item.id)}
+                    conflicted={conflictedIds.has(item.id)}
                     favoritePending={favoritePending}
                     deploymentPending={deploymentPending}
                     deploymentAvailable={deploymentAvailable}
@@ -117,6 +120,7 @@ export function VirtualModBrowser({
                     item={item}
                     key={item.id}
                     selected={selectedIds.has(item.id)}
+                    conflicted={conflictedIds.has(item.id)}
                     favoritePending={favoritePending}
                     deploymentPending={deploymentPending}
                     deploymentAvailable={deploymentAvailable}
@@ -137,6 +141,7 @@ export function VirtualModBrowser({
 interface ModEntryProps {
   item: ModListItem;
   selected: boolean;
+  conflicted: boolean;
   favoritePending: boolean;
   deploymentPending: boolean;
   deploymentAvailable: boolean;
@@ -148,6 +153,7 @@ interface ModEntryProps {
 function ModCard({
   item,
   selected,
+  conflicted,
   favoritePending,
   deploymentPending,
   deploymentAvailable,
@@ -156,7 +162,7 @@ function ModCard({
   onSetEnabled,
 }: ModEntryProps) {
   return (
-    <article className={`mod-card${selected ? " is-selected" : ""}`}>
+    <article className={`mod-card${selected ? " is-selected" : ""}${conflicted ? " has-conflict" : ""}`}>
       <div className="mod-card__media">
         <Link to={`/mods/${item.id}`} aria-label={`查看 ${item.name} 详情`}>
           <ModPreviewImage
@@ -175,6 +181,11 @@ function ModCard({
         >
           {selected ? <Check size={13} /> : null}
         </button>
+        {conflicted ? (
+          <span className="mod-conflict-marker" title="当前 Profile 中检测到冲突">
+            <AlertTriangle size={13} /> 冲突
+          </span>
+        ) : null}
         <button
           className={`favorite-button${item.favorite ? " is-active" : ""}`}
           type="button"
@@ -221,6 +232,7 @@ function ModCard({
 function ModListRow({
   item,
   selected,
+  conflicted,
   favoritePending,
   deploymentPending,
   deploymentAvailable,
@@ -229,7 +241,7 @@ function ModListRow({
   onSetEnabled,
 }: ModEntryProps) {
   return (
-    <article className={`mod-list-row${selected ? " is-selected" : ""}`}>
+    <article className={`mod-list-row${selected ? " is-selected" : ""}${conflicted ? " has-conflict" : ""}`}>
       <button
         className={`selection-check selection-check--inline${selected ? " is-selected" : ""}`}
         type="button"
@@ -252,6 +264,11 @@ function ModListRow({
           <Link to={`/mods/${item.id}`}>{item.name}</Link>
           <span>{item.author ?? "未知作者"} · v{item.version ?? "未知"}</span>
         </div>
+        {conflicted ? (
+          <span className="mod-conflict-marker mod-conflict-marker--inline" title="当前 Profile 中检测到冲突">
+            <AlertTriangle size={12} />
+          </span>
+        ) : null}
       </div>
       <span className="mod-list-row__muted">{item.category ?? "未分类"}</span>
       <span className="mod-list-row__muted">{formatFileSize(item.sizeBytes)}</span>

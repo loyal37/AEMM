@@ -170,6 +170,30 @@ All destination files are created without overwrite. Active deployment and revok
 
 `DeploymentService` owns the batch transaction and operation lock. It rolls back already-copied mods when any later batch member fails, persists deployment records and active Profile flags together, rolls back filesystem state when SQLite fails, and defers only marker-verified disabled cleanup to startup recovery. Migration `0003_deployment_state.sql` stores the active Profile reference and adds deployment/profile indexes.
 
+### Conflict analysis
+
+Phase 7 replaces the original placeholder with two analyzer plugins behind `ConflictAnalyzer`:
+
+- `deployment.path.v1` groups only identical actual deployment targets (destination root + deployment directory + relative path), using Windows case-insensitive keys;
+- `efmi.ini.v1` parses deployed INIs and groups explicit namespace collisions plus overlapping `TextureOverride` and `ShaderOverride` Hashes. Evidence retains the INI path, section, match/handling values, and directly referenced resource filenames.
+
+`ConflictStore` opens a transaction to snapshot the active Profile, enabled membership order, display names, and matching deployment records. Missing or mismatched manifests are data-integrity errors instead of silently reducing coverage. `ConflictService` and `DeploymentService` share one async operation lock, so analysis observes either the state before or after a deployment transaction, never an intermediate rename/database state.
+
+```mermaid
+flowchart LR
+  DB["Active Profile + manifests"] --> Snapshot["Transactional conflict snapshot"]
+  Snapshot --> Lock["Shared deployment operation lock"]
+  Lock --> Paths["deployment.path.v1"]
+  Lock --> INI["efmi.ini.v1 blocking parser"]
+  Paths --> Report["ConflictReport"]
+  INI --> Report
+  Report --> UI["Dashboard / Mods / details"]
+```
+
+The INI reader validates each manifest-relative path, canonical containment, and every link/reparse component before opening it. It reads at most 4 MiB per file, 256 INIs per mod, and 64 MiB per report. Common sections emitted by every official EFMI Tools mod (`Constants`, `Present`, `ResourceModName`, and similar) are deliberately not conflicts; explicit namespaces and runtime match Hashes are cross-mod keys.
+
+`ConflictParticipant.load_order` is the stored AEMM Profile position. Phase 7 does not set `winning_mod_id`, because EFMI recursive include order and same-Hash runtime precedence remain unverified. This distinction is part of the DTO and UI, not a presentation-only disclaimer.
+
 ### Profiles
 
 Profiles store enabled mod IDs and stable load-order positions. Switching profiles computes a reconciliation plan:
@@ -193,7 +217,8 @@ Profiles store enabled mod IDs and stable load-order positions. Switching profil
 - `ModFile`: normalized relative source path, optional deployment-relative target, size, content hash, modification timestamp, and descriptive file role.
 - `Profile`: UUID, name, timestamps, and ordered `ProfileMod` entries.
 - `DeploymentManifest`: strategy ID, owned destination root, created entries, source fingerprints, and timestamps.
-- `Conflict`: kind, severity, participating mods, target/resource key, current winner/order, and analyzer evidence.
+- `ConflictReport`: active Profile, analyzed/affected counts, analyzer warnings, loader-order verification state, and ordered `Conflict` groups.
+- `Conflict`: stable analyzer-derived ID, kind, severity, target/resource key, summary, optional verified winner, and participants with source-path/section/detail evidence.
 
 ### SQLite tables
 
@@ -243,17 +268,17 @@ Enable computes a deployment plan from a repository snapshot and target adapter,
 
 Disable resolves the recorded manifest, validates that every destination is still inside the approved deployment root and still owned by that manifest, revokes only those entries, preserves repository content, and updates profile state. It never deletes the installed mod itself.
 
-For EFMI, likely Phase 6 options are deploying a repository mod directory into `<EFMI>/Mods` or using EFMI's `DISABLED*` convention. The repository/deployment split remains authoritative so author files are preserved.
+For EFMI, Phase 6 deploys each repository mod to a marker-owned `AEMM_<UUID>` child under `<EFMI>/Mods`, using verified `DISABLED*` names for pending/revoke states. The repository/deployment split remains authoritative so author files are preserved.
 
 ## Conflict model
 
-The detector aggregates multiple analyzers:
+The detector aggregates versioned analyzers:
 
-- path analyzer: same normalized deployment target;
-- EFMI/3DMigoto analyzer: duplicate or overlapping INI namespace, override hash, resource, and command-list keys;
+- path analyzer: same normalized actual deployment target;
+- EFMI/3DMigoto analyzer: explicit namespace and override-Hash overlap with INI/resource evidence;
 - future dependency/version analyzer.
 
-Conflicts reference ordered profile entries so the UI can show the current priority/winner only when the underlying loader provides deterministic ordering.
+Conflicts reference ordered Profile entries. The UI shows that order as AEMM state but leaves the winner unset until the underlying loader provides a proven deterministic rule. Conditional command-list interactions, fuzzy matches, and dependency semantics remain separate future analyzer concerns.
 
 ## Error and logging model
 

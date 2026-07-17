@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Archive,
   CheckSquare2,
   Grid2X2,
@@ -17,6 +18,8 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "rea
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
+import { ConflictReportPanel } from "../features/conflicts/ConflictReportPanel";
+import { useConflictReport } from "../features/conflicts/useConflictReport";
 import { useGameStatus } from "../features/game/useGameManager";
 import {
   applyModQuery,
@@ -38,6 +41,7 @@ import { commandErrorMessage } from "../lib/tauri";
 export function ModsPage() {
   const bootstrap = useAppBootstrap();
   const mods = useInstalledMods();
+  const conflicts = useConflictReport();
   const gameStatus = useGameStatus();
   const scan = useScanMods();
   const favorite = useSetModFavorite();
@@ -49,9 +53,23 @@ export function ModsPage() {
   const deferredQuery = useDeferredValue(filters.query);
   const allMods = mods.data ?? [];
   const categories = useMemo(() => modCategories(allMods), [allMods]);
+  const conflictedModIds = useMemo(
+    () =>
+      new Set(
+        (conflicts.data?.conflicts ?? []).flatMap((conflict) =>
+          conflict.participants.map((participant) => participant.modId),
+        ),
+      ),
+    [conflicts.data],
+  );
   const visibleMods = useMemo(
-    () => applyModQuery(allMods, { ...filters, query: deferredQuery }),
-    [allMods, deferredQuery, filters],
+    () =>
+      applyModQuery(
+        allMods,
+        { ...filters, query: deferredQuery },
+        conflictedModIds,
+      ),
+    [allMods, conflictedModIds, deferredQuery, filters],
   );
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const deploymentAvailable = desktopReady && gameStatus.data?.loader?.valid === true;
@@ -124,13 +142,19 @@ export function ModsPage() {
           {scan.data.updated} 个，复用 {scan.data.reusedHashes} 个文件 Hash。
         </p>
       ) : null}
-      {scan.isError || mods.isError || favorite.isError || deployment.isError ? (
+      {scan.isError || mods.isError || favorite.isError || deployment.isError || conflicts.isError ? (
         <p className="inline-error">
           {commandErrorMessage(
-            scan.error ?? mods.error ?? favorite.error ?? deployment.error,
+            scan.error ??
+              mods.error ??
+              favorite.error ??
+              deployment.error ??
+              conflicts.error,
           )}
         </p>
       ) : null}
+
+      {conflicts.data ? <ConflictReportPanel report={conflicts.data} /> : null}
       {deployment.isSuccess && deployment.data.updated > 0 ? (
         <div className="deployment-feedback" role="status">
           <strong>
@@ -229,6 +253,15 @@ export function ModsPage() {
         >
           <Star size={16} fill={filters.favoritesOnly ? "currentColor" : "none"} />
           收藏
+        </button>
+        <button
+          className={`filter-toggle filter-toggle--conflict${filters.conflictsOnly ? " is-active" : ""}`}
+          type="button"
+          aria-pressed={filters.conflictsOnly}
+          onClick={() => updateFilter("conflictsOnly", !filters.conflictsOnly)}
+        >
+          <AlertTriangle size={16} />
+          冲突 {conflictedModIds.size ? `(${conflictedModIds.size})` : ""}
         </button>
         <div className="segmented-control" aria-label="视图模式">
           <button
@@ -332,6 +365,7 @@ export function ModsPage() {
           items={visibleMods}
           viewMode={viewMode}
           selectedIds={selectedIds}
+          conflictedIds={conflictedModIds}
           favoritePending={favorite.isPending}
           deploymentPending={deployment.isPending}
           deploymentAvailable={deploymentAvailable}

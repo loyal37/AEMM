@@ -11,7 +11,9 @@ pub use app::{
     AppBootstrap, AppSettings, CONFIG_SCHEMA_VERSION, GameSettings, LaunchMode, LogLevel,
     StorageSettings, ThemePreference,
 };
-pub use conflict::{Conflict, ConflictKind, ConflictSeverity};
+pub use conflict::{
+    Conflict, ConflictEvidence, ConflictKind, ConflictParticipant, ConflictReport, ConflictSeverity,
+};
 pub use deployment::{
     DeploymentContext, DeploymentEntry, DeploymentManifest, DeploymentPlan, DeploymentRevokeReceipt,
 };

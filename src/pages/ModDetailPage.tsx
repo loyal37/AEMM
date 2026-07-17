@@ -20,6 +20,8 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
+import { ConflictReportPanel } from "../features/conflicts/ConflictReportPanel";
+import { useConflictReport } from "../features/conflicts/useConflictReport";
 import { useGameStatus } from "../features/game/useGameManager";
 import {
   formatFileSize,
@@ -42,6 +44,7 @@ export function ModDetailPage() {
   const { modId } = useParams();
   const bootstrap = useAppBootstrap();
   const details = useModDetails(modId);
+  const conflicts = useConflictReport();
   const gameStatus = useGameStatus();
   const favorite = useSetModFavorite();
   const deployment = useSetModsEnabled();
@@ -212,14 +215,23 @@ export function ModDetailPage() {
         <LocalMetadataEditor details={data} />
       </section>
 
-      <section className="panel detail-conflict-panel">
-        <div>
-          <span className="eyebrow">冲突状态</span>
-          <h2>尚未执行部署冲突分析</h2>
-          <p>Phase 7 会在确定部署目标后分析相同目标文件与 EFMI 资源冲突；当前不会根据仓库相对路径给出误导性结论。</p>
-        </div>
-        <span className="validation-badge is-warning">等待部署适配</span>
-      </section>
+      {conflicts.data ? (
+        <ConflictReportPanel
+          report={conflicts.data}
+          modId={item.id}
+          title="当前模组的冲突"
+        />
+      ) : conflicts.isPending ? (
+        <section className="panel detail-conflict-panel">
+          <LoaderCircle className="spin" size={20} />
+          <span>正在分析已启用模组的部署与 EFMI INI…</span>
+        </section>
+      ) : (
+        <section className="panel detail-conflict-panel">
+          <AlertTriangle size={20} />
+          <span>{commandErrorMessage(conflicts.error)}</span>
+        </section>
+      )}
 
       <section className="panel detail-files-panel">
         <div className="panel__header">

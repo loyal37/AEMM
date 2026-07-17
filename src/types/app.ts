@@ -171,6 +171,50 @@ export interface ModDeploymentMutationResult {
   warnings: string[];
 }
 
+export type ConflictKind =
+  | "deploymentPath"
+  | "efmiNamespace"
+  | "efmiTextureOverride"
+  | "efmiShaderOverride";
+
+export type ConflictSeverity = "information" | "warning" | "error";
+
+export interface ConflictEvidence {
+  sourcePath: string;
+  section: string | null;
+  detail: string;
+}
+
+export interface ConflictParticipant {
+  modId: string;
+  modName: string;
+  loadOrder: number;
+  evidence: ConflictEvidence[];
+}
+
+export interface ModConflict {
+  id: string;
+  analyzerId: string;
+  kind: ConflictKind;
+  severity: ConflictSeverity;
+  resourceKey: string;
+  summary: string;
+  participants: ConflictParticipant[];
+  winningModId: string | null;
+}
+
+export interface ConflictReport {
+  profileId: string;
+  generatedAt: number;
+  enabledMods: number;
+  analyzedIniFiles: number;
+  affectedMods: number;
+  conflicts: ModConflict[];
+  loadOrderVerified: boolean;
+  loadOrderNote: string;
+  warnings: string[];
+}
+
 export interface ModPreview {
   dataUrl: string;
 }

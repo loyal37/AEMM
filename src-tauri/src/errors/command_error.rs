@@ -32,6 +32,7 @@ impl From<AppError> for CommandError {
             AppError::Archive(message) => ("ARCHIVE_INVALID", message),
             AppError::ModInstall(message) => ("MOD_INSTALL_ERROR", message),
             AppError::Deployment(message) => ("MOD_DEPLOYMENT_ERROR", message),
+            AppError::Conflict(message) => ("MOD_CONFLICT_ERROR", message),
             AppError::DataIntegrity(_) => (
                 "DATA_INTEGRITY_ERROR",
                 "本地模组数据不一致，请检查日志并重新扫描。".to_owned(),

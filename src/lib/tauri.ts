@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AppBootstrap,
   AppSettings,
+  ConflictReport,
   DetectedGameInstallation,
   GameLaunchMode,
   GameLaunchResult,
@@ -19,6 +20,7 @@ import type {
 } from "../types/app";
 import {
   getPreviewDetails,
+  getPreviewConflictReport,
   getPreviewImage,
   getPreviewMods,
   setPreviewFavorites,
@@ -183,6 +185,11 @@ export async function cancelModImport(operationId: string): Promise<void> {
 export async function listInstalledMods(): Promise<ModListItem[]> {
   if (!isTauri()) return getPreviewMods();
   return invoke<ModListItem[]>("list_installed_mods");
+}
+
+export async function getActiveConflictReport(): Promise<ConflictReport> {
+  if (!isTauri()) return getPreviewConflictReport();
+  return invoke<ConflictReport>("get_active_conflict_report");
 }
 
 export async function getModDetails(modId: string): Promise<ModDetails> {

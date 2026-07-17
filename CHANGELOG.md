@@ -41,6 +41,10 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - EFMI copy deployment strategy with disabled-prefix staging, BLAKE3 verification, manifest ownership, atomic activation/revoke, and startup reconciliation.
 - Active Profile persistence, transactional deployment records, single/batch enable-disable, Mods/detail switches, enabled filters, F10 refresh guidance, and Dashboard counts.
 - Optional external-package compatibility harness, validated with the checksum-pinned RabbitFX v2.2 EFMI package without redistributing or executing it.
+- Versioned target-path and EFMI INI conflict analyzers over immutable active-Profile deployment snapshots.
+- Explicit namespace, TextureOverride/ShaderOverride Hash, match/handling, and direct resource-file evidence with official-template false-positive fixtures.
+- Live conflict totals, affected-only filtering, card/list markers, and per-mod participant/file/Profile-order details.
+- Shared deployment/conflict serialization plus post-enable conflict warnings and TanStack Query cache reconciliation.
 
 ### Security
 
@@ -55,9 +59,10 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Revalidate the staged fingerprint, logical ID, file count, size, duplicate state, journal ownership, and empty final destination immediately before commit; never overwrite existing repository content.
 - Require a verified EFMI `Mods`/`DISABLED*` policy, create deployment files without overwrite, and keep partial/revoke directories excluded from loader discovery.
 - Refuse deployment cleanup on marker/root/inventory/Hash mismatch, links or extra paths; delete only manifest-listed files and expected empty parents instead of recursive directory contents.
+- Canonicalize and contain every deployed INI read, reject links/reparse components, require the on-disk AEMM marker to match SQLite, and cap conflict parsing at 4 MiB per file, 256 files per mod, and 64 MiB per report.
 
 ### Changed
 
 - Report unknown game versions explicitly instead of presenting Unity engine or launcher application versions as the Endfield game version.
 - Preserve vanished repository records and user overrides by marking them broken instead of deleting database state during synchronization.
-- Keep enabled/conflict UI explicitly unavailable until deployment and analyzer phases can provide truthful state.
+- Expose AEMM Profile order while leaving the EFMI conflict winner unset until loader precedence is independently verified.

@@ -7,6 +7,7 @@ use crate::{
 
 mod efmi_copy;
 
+pub(crate) use efmi_copy::verify_deployment_marker;
 pub use efmi_copy::{EFMI_COPY_STRATEGY_ID, EfmiCopyDeploymentStrategy};
 
 #[async_trait]

@@ -13,6 +13,7 @@ import {
   updateLocalModMetadata,
 } from "../../lib/tauri";
 import type { LocalModMetadata, ModDetails, ModListItem } from "../../types/app";
+import { CONFLICT_REPORT_KEY } from "../conflicts/useConflictReport";
 
 export const MOD_LIST_KEY = ["mods", "list"] as const;
 const modDetailsKey = (modId: string) => ["mods", "details", modId] as const;
@@ -31,6 +32,7 @@ export function useScanMods() {
     mutationFn: scanModRepository,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["mods"] });
+      await queryClient.invalidateQueries({ queryKey: CONFLICT_REPORT_KEY });
     },
   });
 }
@@ -45,6 +47,7 @@ export function useCommitModImport() {
     mutationFn: commitModImport,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["mods"] });
+      await queryClient.invalidateQueries({ queryKey: CONFLICT_REPORT_KEY });
     },
   });
 }
@@ -122,6 +125,7 @@ export function useSetModsEnabled() {
       if (result.updated !== variables.modIds.length) {
         void queryClient.invalidateQueries({ queryKey: ["mods"] });
       }
+      void queryClient.invalidateQueries({ queryKey: CONFLICT_REPORT_KEY });
     },
   });
 }
@@ -135,6 +139,7 @@ export function useUpdateLocalModMetadata(modId: string) {
         items?.map((item) => (item.id === updated.id ? updated : item)),
       );
       void queryClient.invalidateQueries({ queryKey: modDetailsKey(modId) });
+      void queryClient.invalidateQueries({ queryKey: CONFLICT_REPORT_KEY });
     },
   });
 }

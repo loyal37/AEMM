@@ -805,6 +805,31 @@ fn read_marker(path: &Path) -> Result<DeploymentMarker, AppError> {
     Ok(marker)
 }
 
+pub(crate) fn verify_deployment_marker(
+    root: &Path,
+    manifest: &DeploymentManifest,
+) -> Result<(), AppError> {
+    validate_manifest_shape(manifest)?;
+    let expected_directory = PathBuf::from(format!("{ACTIVE_PREFIX}{}", manifest.mod_id.simple()));
+    if manifest.destination_directory != expected_directory {
+        return Err(AppError::UnsafePath(
+            "部署目录名称与 AEMM 模组所有权不匹配。".to_owned(),
+        ));
+    }
+    if !root.is_dir() || path_is_link_or_reparse_point(root)? {
+        return Err(AppError::UnsafePath(
+            "部署目录缺失或已变成链接/重解析点。".to_owned(),
+        ));
+    }
+    let marker = read_marker(&root.join(DEPLOYMENT_MARKER_FILE))?;
+    if marker.manifest != *manifest {
+        return Err(AppError::UnsafePath(
+            "部署目录的所有权清单与数据库记录不一致。".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_owned_inventory(
     root: &Path,
     manifest: &DeploymentManifest,
