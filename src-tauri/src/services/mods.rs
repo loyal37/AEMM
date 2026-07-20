@@ -457,14 +457,8 @@ impl ModService {
             }
         }
 
-        let repository_policy = if paths_equal_case_insensitive(
-            &requested.repository_path,
-            &self.default_repository_path,
-        ) {
-            RepositoryInitializationPolicy::TrustedAemmDefault
-        } else {
-            RepositoryInitializationPolicy::EmptyOnly
-        };
+        let repository_policy =
+            repository_policy(&requested.repository_path, &self.default_repository_path);
         let requested_repository = requested.repository_path.clone();
         let repository = tokio::task::spawn_blocking(move || {
             RepositoryRoot::open_or_initialize(&requested_repository, repository_policy)
@@ -568,12 +562,7 @@ impl ModService {
     async fn repository_root(&self) -> Result<RepositoryRoot, AppError> {
         let settings = self.settings.get().await;
         let configured_path = settings.storage.repository_path;
-        let policy =
-            if paths_equal_case_insensitive(&configured_path, &self.default_repository_path) {
-                RepositoryInitializationPolicy::TrustedAemmDefault
-            } else {
-                RepositoryInitializationPolicy::EmptyOnly
-            };
+        let policy = repository_policy(&configured_path, &self.default_repository_path);
         tokio::task::spawn_blocking(move || {
             RepositoryRoot::open_or_initialize(&configured_path, policy)
         })
@@ -614,6 +603,19 @@ impl ModService {
                 lifecycle_state: identity.lifecycle_state,
             })
             .collect())
+    }
+}
+
+fn repository_policy(path: &Path, default_path: &Path) -> RepositoryInitializationPolicy {
+    if path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("Mods"))
+    {
+        RepositoryInitializationPolicy::ExternalEfmiMods
+    } else if paths_equal_case_insensitive(path, default_path) {
+        RepositoryInitializationPolicy::TrustedAemmDefault
+    } else {
+        RepositoryInitializationPolicy::EmptyOnly
     }
 }
 
@@ -795,7 +797,7 @@ mod tests {
         paths.ensure_base_directories().await?;
         let settings = SettingsService::load_or_create(&paths).await?;
         let database = Database::connect(&paths.database_file).await?;
-        let mod_root = paths.repository_directory.join("removal-fixture");
+        let mod_root = paths.repository_directory.join("DISABLED_removal-fixture");
         fs::create_dir(&mod_root)?;
         fs::write(
             mod_root.join("mod.json"),
@@ -855,8 +857,8 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let (service, database, paths, mod_id) = removal_fixture(directory.path()).await?;
         sqlx::query(
-            "INSERT INTO profile_mods (profile_id, mod_id, enabled, load_order)
-             VALUES ('00000000-0000-0000-0000-000000000001', ?, 0, 0)",
+            "UPDATE profile_mods SET enabled = 0
+             WHERE profile_id = '00000000-0000-0000-0000-000000000001' AND mod_id = ?",
         )
         .bind(mod_id.to_string())
         .execute(database.pool())
@@ -866,7 +868,12 @@ mod tests {
 
         assert_eq!(result.removed, 1);
         assert!(result.warnings.is_empty());
-        assert!(!paths.repository_directory.join("removal-fixture").exists());
+        assert!(
+            !paths
+                .repository_directory
+                .join("DISABLED_removal-fixture")
+                .exists()
+        );
         let mods: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods")
             .fetch_one(database.pool())
             .await?;
@@ -885,15 +892,20 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let (service, database, paths, mod_id) = removal_fixture(directory.path()).await?;
         sqlx::query(
-            "INSERT INTO profile_mods (profile_id, mod_id, enabled, load_order)
-             VALUES ('00000000-0000-0000-0000-000000000001', ?, 1, 0)",
+            "UPDATE profile_mods SET enabled = 1
+             WHERE profile_id = '00000000-0000-0000-0000-000000000001' AND mod_id = ?",
         )
         .bind(mod_id.to_string())
         .execute(database.pool())
         .await?;
 
         assert!(service.uninstall(vec![mod_id]).await.is_err());
-        assert!(paths.repository_directory.join("removal-fixture").is_dir());
+        assert!(
+            paths
+                .repository_directory
+                .join("DISABLED_removal-fixture")
+                .is_dir()
+        );
         let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pending_mod_removals")
             .fetch_one(database.pool())
             .await?;
@@ -912,18 +924,29 @@ mod tests {
             .prepare_removals(&[(mod_id, tombstone.clone())])
             .await?;
         let root = service.repository_root().await?;
-        root.quarantine_mod_root(&RepositoryRelativePath::new("removal-fixture")?, mod_id)?;
+        root.quarantine_mod_root(
+            &RepositoryRelativePath::new("DISABLED_removal-fixture")?,
+            mod_id,
+        )?;
 
         service.recover_pending_removals().await?;
 
-        assert!(paths.repository_directory.join("removal-fixture").is_dir());
+        assert!(
+            paths
+                .repository_directory
+                .join("DISABLED_removal-fixture")
+                .is_dir()
+        );
         assert!(!paths.repository_directory.join(&tombstone).exists());
 
         let records = service
             .store
             .prepare_removals(&[(mod_id, tombstone.clone())])
             .await?;
-        root.quarantine_mod_root(&RepositoryRelativePath::new("removal-fixture")?, mod_id)?;
+        root.quarantine_mod_root(
+            &RepositoryRelativePath::new("DISABLED_removal-fixture")?,
+            mod_id,
+        )?;
         service.store.commit_removals(&records).await?;
 
         service.recover_pending_removals().await?;

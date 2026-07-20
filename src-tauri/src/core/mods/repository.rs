@@ -22,6 +22,7 @@ const MAX_MARKER_BYTES: u64 = 4 * 1024;
 pub enum RepositoryInitializationPolicy {
     EmptyOnly,
     TrustedAemmDefault,
+    ExternalEfmiMods,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +105,19 @@ impl RepositoryRoot {
         }
 
         let root = Self { canonical_path };
+        if policy == RepositoryInitializationPolicy::ExternalEfmiMods {
+            let is_mods_directory = root
+                .canonical_path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("Mods"));
+            if !is_mods_directory {
+                return Err(AppError::UnsafePath(
+                    "只能直接管理名称为 Mods 的 EFMI 模组目录。".to_owned(),
+                ));
+            }
+            return Ok(root);
+        }
+
         let marker_path = root.canonical_path.join(REPOSITORY_MARKER_FILE);
         if marker_path.exists() {
             root.validate_marker(&marker_path)?;

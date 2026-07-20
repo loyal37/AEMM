@@ -1,5 +1,6 @@
 import {
   Boxes,
+  FolderCog,
   Gamepad2,
   LayoutDashboard,
   Settings,
@@ -7,7 +8,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router";
 import { useTranslation } from "react-i18next";
-import { useGameStatus } from "../../features/game/useGameManager";
+import { useAppBootstrap } from "../../features/bootstrap/useAppBootstrap";
 
 const navigation = [
   { to: "/", label: "navigation.dashboard", icon: LayoutDashboard, end: true },
@@ -17,9 +18,11 @@ const navigation = [
 ];
 
 export function Sidebar() {
-  const gameStatus = useGameStatus();
+  const bootstrap = useAppBootstrap();
   const { t } = useTranslation();
-  const configured = gameStatus.data?.configured === true;
+  const modsPath = bootstrap.data?.settings.game.loaderRoot
+    ? bootstrap.data.settings.storage.repositoryPath
+    : null;
 
   return (
     <aside className="sidebar" aria-label={t("navigation.label")}>
@@ -48,12 +51,12 @@ export function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <span className="eyebrow">{t("navigation.currentGame")}</span>
+        <span className="eyebrow">EFMI Mods</span>
         <div className="game-chip">
-          <span className={`status-dot ${configured ? "status-dot--ready" : "status-dot--idle"}`} />
+          <span className={`status-dot ${modsPath ? "status-dot--ready" : "status-dot--idle"}`} />
           <div>
-            <strong>{t("navigation.gameName")}</strong>
-            <span>{configured ? t("navigation.configured") : t("navigation.waiting")}</span>
+            <strong><FolderCog size={13} /> {modsPath ? "已连接" : "未配置"}</strong>
+            <span title={modsPath ?? undefined}>{modsPath ?? "请在设置中选择 Mods"}</span>
           </div>
         </div>
       </div>

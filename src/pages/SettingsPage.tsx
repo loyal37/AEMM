@@ -2,156 +2,52 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
   Database,
-  ExternalLink,
   FileClock,
   FolderCog,
-  Gamepad2,
+  HardDrive,
   Languages,
   LoaderCircle,
   Palette,
-  RefreshCw,
-  Search,
   TriangleAlert,
 } from "lucide-react";
-import type { ChangeEvent } from "react";
 import { PageHeader } from "../components/ui/PageHeader";
-import {
-  useAppBootstrap,
-  useSetStoragePaths,
-  useUpdateAppSettings,
-} from "../features/bootstrap/useAppBootstrap";
+import { useAppBootstrap, useUpdateAppSettings } from "../features/bootstrap/useAppBootstrap";
 import { useOnboarding } from "../features/experience/AppExperience";
-import {
-  useDetectGameInstallations,
-  useGameStatus,
-  useOpenGameDirectory,
-  useSetEfmiLoaderRoot,
-  useSetGameInstallation,
-  useSetGameLaunchMode,
-} from "../features/game/useGameManager";
+import { useSetEfmiModsDirectory } from "../features/efmi/useEfmiManager";
 import { commandErrorMessage } from "../lib/tauri";
-import type {
-  AppSettings,
-  DetectedGameInstallation,
-  GameEdition,
-  GameLaunchMode,
-} from "../types/app";
+import type { AppSettings } from "../types/app";
 
 function displayPath(value: string | null | undefined) {
   return value && value.length > 0 ? value : "尚未设置";
 }
 
-function editionLabel(edition: GameEdition | null | undefined) {
-  if (edition === "china") return "国服";
-  if (edition === "international") return "国际服";
-  return "版本区域待确认";
-}
-
-function discoverySourceLabel(source: DetectedGameInstallation["source"]) {
-  const labels: Record<DetectedGameInstallation["source"], string> = {
-    configuredPath: "已保存路径",
-    launcherRegistry: "鹰角启动器注册表",
-    knownInstallRoot: "常见安装位置",
-    manualSelection: "手动选择",
-  };
-  return labels[source];
-}
-
 export function SettingsPage() {
   const bootstrap = useAppBootstrap();
-  const gameStatus = useGameStatus();
-  const detect = useDetectGameInstallations();
-  const configureGame = useSetGameInstallation();
-  const configureLoader = useSetEfmiLoaderRoot();
-  const setLaunchMode = useSetGameLaunchMode();
-  const openDirectory = useOpenGameDirectory();
-  const configureStorage = useSetStoragePaths();
+  const configureEfmi = useSetEfmiModsDirectory();
   const updatePreferences = useUpdateAppSettings();
   const onboarding = useOnboarding();
-
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
   const settings = bootstrap.data?.settings;
-  const installation = gameStatus.data?.installation?.installation;
-  const loader = gameStatus.data?.loader;
-  const busy =
-    detect.isPending ||
-    configureGame.isPending ||
-    configureLoader.isPending ||
-    setLaunchMode.isPending ||
-    configureStorage.isPending ||
-    updatePreferences.isPending;
-  const operationError =
-    configureGame.error ??
-    configureLoader.error ??
-    setLaunchMode.error ??
-    detect.error ??
-    openDirectory.error ??
-    configureStorage.error ??
-    updatePreferences.error ??
-    gameStatus.error;
+  const modsConfigured = Boolean(settings?.game.loaderRoot);
+  const busy = configureEfmi.isPending || updatePreferences.isPending;
+  const operationError = configureEfmi.error ?? updatePreferences.error ?? bootstrap.error;
 
   function updatePreference(patch: Partial<AppSettings>) {
-    if (!settings) return;
-    updatePreferences.mutate({ ...settings, ...patch });
+    if (settings) updatePreferences.mutate({ ...settings, ...patch });
   }
 
-  async function chooseDirectory(title: string) {
-    if (!desktopReady) return null;
-    return open({ directory: true, multiple: false, title });
-  }
-
-  async function handleChooseGame() {
+  async function chooseEfmiMods() {
+    if (!desktopReady) return;
     try {
-      const selected = await chooseDirectory("选择《明日方舟：终末地》游戏目录");
-      if (typeof selected === "string") {
-        await configureGame.mutateAsync(selected);
-      }
-    } catch {
-      // The mutation or dialog state renders the actionable error below.
-    }
-  }
-
-  async function handleChooseLoader() {
-    try {
-      const selected = await chooseDirectory("选择 EFMI 加载器目录");
-      if (typeof selected === "string") {
-        await configureLoader.mutateAsync(selected);
-      }
-    } catch {
-      // The mutation or dialog state renders the actionable error below.
-    }
-  }
-
-  async function handleChooseStorage(kind: "repository" | "staging") {
-    if (!settings) return;
-    try {
-      const title =
-        kind === "repository" ? "选择新的模组仓库目录" : "选择新的安装临时目录";
-      const selected = await chooseDirectory(title);
-      if (typeof selected !== "string") return;
-      await configureStorage.mutateAsync({
-        ...settings.storage,
-        [kind === "repository" ? "repositoryPath" : "stagingPath"]: selected,
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "选择 EFMI 根目录或 EFMI/Mods 目录",
       });
+      if (typeof selected === "string") await configureEfmi.mutateAsync(selected);
     } catch {
-      // The mutation or dialog state renders the actionable error below.
+      // The mutation renders a user-facing error below.
     }
-  }
-
-  async function handleDetect() {
-    try {
-      const candidates = await detect.mutateAsync();
-      if (candidates.length === 1) {
-        const path = candidates[0]?.validation.installation?.installationRoot;
-        if (path) await configureGame.mutateAsync(path);
-      }
-    } catch {
-      // The mutation state renders the actionable error below.
-    }
-  }
-
-  function handleLaunchModeChange(event: ChangeEvent<HTMLSelectElement>) {
-    setLaunchMode.mutate(event.target.value as GameLaunchMode);
   }
 
   return (
@@ -159,301 +55,90 @@ export function SettingsPage() {
       <PageHeader
         eyebrow="应用设置"
         title="设置"
-        description="机器相关路径保存在 config.json；保存前由后端重新规范化并验证目录身份。"
+        description="AEMM 只管理 EFMI Mods；SQLite、日志和临时文件固定保存在软件目录的 data 文件夹。"
       />
 
-      <section className="game-settings-panel" aria-labelledby="game-settings-title">
+      <section className="game-settings-panel" aria-labelledby="efmi-settings-title">
         <div className="panel__header">
-          <div>
-            <span className="eyebrow">游戏管理</span>
-            <h2 id="game-settings-title">终末地与 EFMI</h2>
-          </div>
-          <span
-            className={`validation-badge ${gameStatus.data?.configured ? "is-valid" : "is-warning"}`}
-          >
-            {gameStatus.data?.configured ? <CheckCircle2 size={14} /> : <TriangleAlert size={14} />}
-            {gameStatus.data?.configured ? "游戏目录有效" : "等待有效路径"}
+          <div><span className="eyebrow">模组目录</span><h2 id="efmi-settings-title">EFMI Mods</h2></div>
+          <span className={`validation-badge ${modsConfigured ? "is-valid" : "is-warning"}`}>
+            {modsConfigured ? <CheckCircle2 size={14} /> : <TriangleAlert size={14} />}
+            {modsConfigured ? "已配置" : "等待选择"}
           </span>
         </div>
-
         <div className="path-setting-row">
-          <div className="setting-card__icon">
-            <Gamepad2 size={20} />
-          </div>
+          <div className="setting-card__icon"><FolderCog size={20} /></div>
           <div className="path-setting-row__content">
-            <strong>游戏安装目录</strong>
-            <span className="path-value">{displayPath(installation?.installationRoot)}</span>
-            <small>
-              {installation
-                ? `${editionLabel(installation.edition)} · 置信度 ${gameStatus.data?.installation?.confidence ?? 0}%`
-                : "需要包含 Endfield.exe 与匹配的 Endfield_Data/app.info。"}
-            </small>
+            <strong>直接管理的 Mods 文件夹</strong>
+            <p className="path-value" title={settings?.storage.repositoryPath}>
+              {displayPath(modsConfigured ? settings?.storage.repositoryPath : null)}
+            </p>
+            <small>普通目录表示启用；名称以 DISABLED 开头表示禁用。启停只做同目录原子重命名。</small>
           </div>
           <div className="path-setting-row__actions">
-            <button
-              className="button button--secondary"
-              type="button"
-              disabled={!desktopReady || busy}
-              onClick={() => void handleDetect()}
-            >
-              <Search size={16} />
-              自动检测
-            </button>
-            <button
-              className="button button--secondary"
-              type="button"
-              disabled={!desktopReady || busy}
-              onClick={() => void handleChooseGame()}
-            >
-              <FolderCog size={16} />
-              选择目录
-            </button>
-            <button
-              className="icon-button icon-button--active"
-              type="button"
-              title="打开游戏目录"
-              aria-label="打开游戏目录"
-              disabled={!gameStatus.data?.configured || openDirectory.isPending}
-              onClick={() => openDirectory.mutate()}
-            >
-              <ExternalLink size={16} />
+            <button className="button button--primary" type="button" disabled={!desktopReady || busy} onClick={() => void chooseEfmiMods()}>
+              {configureEfmi.isPending ? <LoaderCircle size={16} className="spin" /> : <FolderCog size={16} />}
+              {modsConfigured ? "更改目录" : "选择目录"}
             </button>
           </div>
         </div>
-
-        <div className="path-setting-row">
-          <div className="setting-card__icon">
-            <LoaderCircle size={20} />
-          </div>
-          <div className="path-setting-row__content">
-            <strong>EFMI 加载器目录</strong>
-            <span className="path-value">{displayPath(loader?.root)}</span>
-            <small className={loader && !loader.launchReady ? "text-warning" : undefined}>
-              {loader
-                ? loader.launchReady
-                  ? "加载器有效，且 d3dx.ini 的 launch 路径与当前游戏一致。"
-                  : loader.issues[0]
-                : "可选；需要 3DMigotoLoader.exe、d3d11.dll、d3dx.ini 与 Mods。"}
-            </small>
-          </div>
-          <div className="path-setting-row__actions">
-            {loader ? (
-              <button
-                className="button button--ghost"
-                type="button"
-                disabled={busy}
-                onClick={() => configureLoader.mutate(null)}
-              >
-                清除
-              </button>
-            ) : null}
-            <button
-              className="button button--secondary"
-              type="button"
-              disabled={!desktopReady || !gameStatus.data?.configured || busy}
-              onClick={() => void handleChooseLoader()}
-            >
-              <FolderCog size={16} />
-              选择目录
-            </button>
-          </div>
-        </div>
-
-        <div className="launch-mode-row">
-          <div>
-            <strong>启动方式</strong>
-            <small>{gameStatus.data?.launchBlockReason ?? "当前启动方式已通过校验。"}</small>
-          </div>
-          <select
-            className="select-field"
-            aria-label="游戏启动方式"
-            value={gameStatus.data?.launchMode ?? settings?.game.launchMode ?? "efmiLoader"}
-            disabled={!desktopReady || busy}
-            onChange={handleLaunchModeChange}
-          >
-            <option value="game">直接启动 Endfield.exe</option>
-            <option value="efmiLoader">通过 EFMI / 3DMigotoLoader</option>
-            <option value="externalLauncher" disabled>
-              外部启动器（待适配）
-            </option>
-          </select>
-        </div>
-
-        {detect.isSuccess && detect.data.length === 0 ? (
-          <p className="inline-notice">未在已验证的常见位置找到游戏，请手动选择安装目录。</p>
-        ) : null}
-        {detect.data && detect.data.length > 1 ? (
-          <div className="detection-results">
-            <span className="eyebrow">检测结果</span>
-            {detect.data.map((candidate) => {
-              const item = candidate.validation.installation;
-              if (!item) return null;
-              return (
-                <button
-                  type="button"
-                  className="detection-result"
-                  key={item.installationRoot}
-                  onClick={() => configureGame.mutate(item.installationRoot)}
-                >
-                  <span>
-                    <strong>{discoverySourceLabel(candidate.source)}</strong>
-                    <small>{item.installationRoot}</small>
-                  </span>
-                  <span>{candidate.validation.confidence}%</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-        {operationError ? (
-          <p className="inline-error">{commandErrorMessage(operationError)}</p>
-        ) : null}
+        <p className="settings-safety-note">
+          AEMM 不检测游戏、不修改游戏路径，也不提供游戏或加载器启动功能。
+        </p>
       </section>
+
+      {operationError ? <p className="inline-error">{commandErrorMessage(operationError)}</p> : null}
+      {configureEfmi.isSuccess ? <p className="inline-success">EFMI Mods 已连接；前往模组页面执行扫描即可同步实际内容。</p> : null}
 
       <section className="settings-grid">
-        <article className="setting-card setting-card--wide">
-          <div className="setting-card__icon">
-            <FolderCog size={20} />
-          </div>
+        <article className="setting-card">
+          <div className="setting-card__icon"><HardDrive size={20} /></div>
           <div className="setting-card__body">
-            <span className="eyebrow">存储</span>
-            <h2>模组仓库</h2>
-            <p className="path-value">{displayPath(settings?.storage.repositoryPath)}</p>
-            <p className="path-value path-value--muted">
-              临时目录：{displayPath(settings?.storage.stagingPath)}
-            </p>
-            <small>
-              更改仓库前必须先卸载全部模组并清空旧仓库；AEMM 不会自动搬运或删除旧目录。
-            </small>
-          </div>
-          <div className="path-setting-row__actions">
-            <button
-              className="button button--secondary"
-              type="button"
-              disabled={!desktopReady || !settings || busy}
-              onClick={() => void handleChooseStorage("repository")}
-            >
-              更改仓库
-            </button>
-            <button
-              className="button button--secondary"
-              type="button"
-              disabled={!desktopReady || !settings || busy}
-              onClick={() => void handleChooseStorage("staging")}
-            >
-              更改临时目录
-            </button>
+            <span className="eyebrow">便携数据</span><h2>配置文件</h2>
+            <p className="path-value" title={bootstrap.data?.configPath}>{displayPath(bootstrap.data?.configPath)}</p>
           </div>
         </article>
-
         <article className="setting-card">
-          <div className="setting-card__icon">
-            <Palette size={20} />
-          </div>
+          <div className="setting-card__icon"><Database size={20} /></div>
           <div className="setting-card__body">
-            <span className="eyebrow">外观</span>
-            <h2>界面主题</h2>
-            <p>深色模式固定使用 AEMM 配色；跟随系统会响应 Windows 明暗设置。</p>
-            <select
-              className="select-field preference-select"
-              aria-label="界面主题"
-              value={settings?.theme ?? "dark"}
-              disabled={!settings || updatePreferences.isPending}
-              onChange={(event) =>
-                updatePreference({ theme: event.target.value as AppSettings["theme"] })
-              }
-            >
-              <option value="dark">深色</option>
-              <option value="system">跟随系统</option>
+            <span className="eyebrow">便携数据</span><h2>{bootstrap.data?.databaseReady ? "SQLite 已就绪" : "等待桌面运行时"}</h2>
+            <p className="path-value" title={bootstrap.data?.databasePath}>{displayPath(bootstrap.data?.databasePath)}</p>
+          </div>
+        </article>
+        <article className="setting-card">
+          <div className="setting-card__icon"><FileClock size={20} /></div>
+          <div className="setting-card__body">
+            <span className="eyebrow">便携数据</span><h2>日志目录</h2>
+            <p className="path-value" title={bootstrap.data?.logDirectory}>{displayPath(bootstrap.data?.logDirectory)}</p>
+            <select className="select-field preference-select" aria-label="日志级别" value={settings?.logLevel ?? "info"} disabled={!settings || busy} onChange={(event) => updatePreference({ logLevel: event.target.value as AppSettings["logLevel"] })}>
+              <option value="error">error</option><option value="warn">warn</option><option value="info">info</option><option value="debug">debug</option><option value="trace">trace</option>
             </select>
           </div>
         </article>
-
         <article className="setting-card">
-          <div className="setting-card__icon">
-            <Languages size={20} />
-          </div>
+          <div className="setting-card__icon"><Palette size={20} /></div>
           <div className="setting-card__body">
-            <span className="eyebrow">语言</span>
-            <h2>界面语言</h2>
-            <p>应用框架、导航和首次引导已本地化；英语业务页面仍在持续补齐。</p>
-            <select
-              className="select-field preference-select"
-              aria-label="界面语言"
-              value={settings?.language ?? "zh-CN"}
-              disabled={!settings || updatePreferences.isPending}
-              onChange={(event) => updatePreference({ language: event.target.value })}
-            >
-              <option value="zh-CN">简体中文</option>
-              <option value="en-US">English (Preview)</option>
+            <span className="eyebrow">外观</span><h2>界面主题</h2>
+            <select className="select-field preference-select" aria-label="界面主题" value={settings?.theme ?? "dark"} disabled={!settings || busy} onChange={(event) => updatePreference({ theme: event.target.value as AppSettings["theme"] })}>
+              <option value="dark">深色</option><option value="system">跟随系统</option>
             </select>
           </div>
         </article>
-
         <article className="setting-card">
-          <div className="setting-card__icon">
-            <Database size={20} />
-          </div>
+          <div className="setting-card__icon"><Languages size={20} /></div>
           <div className="setting-card__body">
-            <span className="eyebrow">数据库</span>
-            <h2>{bootstrap.data?.databaseReady ? "SQLite 已就绪" : "等待桌面运行时"}</h2>
-            <p className="path-value">{displayPath(bootstrap.data?.databasePath)}</p>
-          </div>
-        </article>
-
-        <article className="setting-card">
-          <div className="setting-card__icon">
-            <FileClock size={20} />
-          </div>
-          <div className="setting-card__body">
-            <span className="eyebrow">日志</span>
-            <h2>日志级别</h2>
-            <p className="path-value">{displayPath(bootstrap.data?.logDirectory)}</p>
-            <select
-              className="select-field preference-select"
-              aria-label="日志级别"
-              value={settings?.logLevel ?? "info"}
-              disabled={!settings || updatePreferences.isPending}
-              onChange={(event) =>
-                updatePreference({ logLevel: event.target.value as AppSettings["logLevel"] })
-              }
-            >
-              <option value="error">error</option>
-              <option value="warn">warn</option>
-              <option value="info">info</option>
-              <option value="debug">debug</option>
-              <option value="trace">trace</option>
+            <span className="eyebrow">语言</span><h2>界面语言</h2>
+            <select className="select-field preference-select" aria-label="界面语言" value={settings?.language ?? "zh-CN"} disabled={!settings || busy} onChange={(event) => updatePreference({ language: event.target.value })}>
+              <option value="zh-CN">简体中文</option><option value="en-US">English (Preview)</option>
             </select>
-            <small className="preference-note">新的日志过滤级别将在下次启动后完整生效。</small>
           </div>
         </article>
-
-        <article className="setting-card setting-card--wide onboarding-setting">
-          <div className="setting-card__icon">
-            <CheckCircle2 size={20} />
-          </div>
-          <div className="setting-card__body">
-            <span className="eyebrow">首次使用</span>
-            <h2>安全工作流引导</h2>
-            <p>重新查看仓库、EFMI 部署和 Profile 回滚机制说明。</p>
-          </div>
-          <button
-            className="button button--secondary"
-            type="button"
-            disabled={!settings || updatePreferences.isPending}
-            onClick={onboarding.open}
-          >
-            重新查看引导
-          </button>
+        <article className="setting-card">
+          <div className="setting-card__icon"><CheckCircle2 size={20} /></div>
+          <div className="setting-card__body"><span className="eyebrow">帮助</span><h2>安全工作流</h2><p>重新查看导入、启停和 Profile 说明。</p></div>
+          <button className="button button--secondary" type="button" disabled={!settings || busy} onClick={onboarding.open}>重新查看引导</button>
         </article>
       </section>
-
-      {busy ? (
-        <div className="floating-progress" role="status">
-          <RefreshCw size={15} className="spin" />
-          正在验证本地路径…
-        </div>
-      ) : null}
     </div>
   );
 }

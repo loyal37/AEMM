@@ -6,9 +6,11 @@ use crate::{
 };
 
 mod efmi_copy;
+mod efmi_direct;
 
 pub(crate) use efmi_copy::verify_deployment_marker;
 pub use efmi_copy::{EFMI_COPY_STRATEGY_ID, EfmiCopyDeploymentStrategy};
+pub use efmi_direct::{EFMI_DIRECT_STRATEGY_ID, EfmiDirectDeploymentStrategy};
 
 #[async_trait]
 pub trait ModDeploymentStrategy: Send + Sync {

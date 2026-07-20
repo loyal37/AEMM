@@ -17,7 +17,7 @@ use crate::{
         },
     },
     errors::AppError,
-    models::{AuthorModMetadata, ModFile},
+    models::{AuthorModMetadata, MetadataSourceKind, ModFile},
     utils::validate_relative_path,
 };
 
@@ -62,6 +62,7 @@ pub struct ScannedMod {
     pub files: Vec<ModFile>,
     pub size_bytes: u64,
     pub content_fingerprint: String,
+    pub enabled_in_efmi: bool,
     pub issues: Vec<ScanIssue>,
 }
 
@@ -155,7 +156,7 @@ impl FileSystemModScanner {
             mods.push(self.scan_mod_sync(mod_root, relative, &cache, counters)?);
         }
 
-        reject_duplicate_logical_ids(&mods)?;
+        resolve_duplicate_logical_ids(&mut mods)?;
         Ok(RepositoryScan {
             mods,
             issues,
@@ -174,6 +175,8 @@ impl FileSystemModScanner {
         counters: ScanCounters<'_>,
     ) -> Result<ScannedMod, AppError> {
         let repository_key = repository_path.storage_key();
+        let enabled_in_efmi = !is_disabled_directory_name(&repository_key);
+        let metadata_key = enabled_directory_name(&repository_key);
         let mut issues = Vec::new();
         let mut skipped_paths = Vec::new();
         let walker = WalkDir::new(&root)
@@ -293,7 +296,7 @@ impl FileSystemModScanner {
         }
 
         files.sort_by_key(|file| file.source_path.to_string_lossy().to_lowercase());
-        let metadata_read = self.metadata.read_with_warnings(&root, &repository_key)?;
+        let metadata_read = self.metadata.read_with_warnings(&root, metadata_key)?;
         issues.extend(metadata_read.warnings.into_iter().map(|message| ScanIssue {
             level: ScanIssueLevel::Warning,
             repository_path: Some(repository_key.clone()),
@@ -308,9 +311,24 @@ impl FileSystemModScanner {
             files,
             size_bytes,
             content_fingerprint,
+            enabled_in_efmi,
             issues,
         })
     }
+}
+
+fn is_disabled_directory_name(name: &str) -> bool {
+    name.get(..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("DISABLED"))
+}
+
+fn enabled_directory_name(name: &str) -> &str {
+    if !is_disabled_directory_name(name) {
+        return name;
+    }
+    name.get(8..)
+        .unwrap_or_default()
+        .trim_start_matches(['_', '-', ' '])
 }
 
 #[async_trait]
@@ -433,15 +451,37 @@ fn classify_file_role(path: &Path) -> String {
     .to_owned()
 }
 
-fn reject_duplicate_logical_ids(mods: &[ScannedMod]) -> Result<(), AppError> {
-    let mut logical_ids = HashMap::<String, String>::new();
-    for scanned_mod in mods {
-        let logical_id = scanned_mod.author_metadata.logical_id.to_lowercase();
-        let repository_path = scanned_mod.repository_path.storage_key();
-        if let Some(existing_path) = logical_ids.insert(logical_id, repository_path.clone()) {
+fn resolve_duplicate_logical_ids(mods: &mut [ScannedMod]) -> Result<(), AppError> {
+    let mut groups = HashMap::<String, Vec<usize>>::new();
+    for (index, scanned_mod) in mods.iter().enumerate() {
+        groups
+            .entry(scanned_mod.author_metadata.logical_id.to_lowercase())
+            .or_default()
+            .push(index);
+    }
+    for indexes in groups.values().filter(|indexes| indexes.len() > 1) {
+        if indexes
+            .iter()
+            .any(|index| mods[*index].author_metadata.source_kind == MetadataSourceKind::ModJson)
+        {
+            let paths = indexes
+                .iter()
+                .map(|index| mods[*index].repository_path.storage_key())
+                .collect::<Vec<_>>()
+                .join("、");
             return Err(AppError::ModMetadata(format!(
-                "模组目录 {existing_path} 与 {repository_path} 使用了相同 ID，请修正后重新扫描。"
+                "模组目录 {paths} 使用了相同的作者 ID，请修正后重新扫描。"
             )));
+        }
+        for index in indexes {
+            let repository_path = mods[*index].repository_path.storage_key();
+            let digest = blake3::hash(repository_path.to_lowercase().as_bytes());
+            mods[*index].author_metadata.logical_id = format!("local.{}", &digest.to_hex()[..20]);
+            mods[*index].issues.push(ScanIssue {
+                level: ScanIssueLevel::Warning,
+                repository_path: Some(repository_path),
+                message: "存在同名启用/禁用目录，已按实际目录分别建立本地身份。".to_owned(),
+            });
         }
     }
     Ok(())
@@ -548,6 +588,34 @@ mod tests {
             .scan_repository(root, ScanCache::new())
             .await;
         assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn keeps_same_named_active_and_disabled_folders_as_separate_local_mods()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let root = RepositoryRoot::open_or_initialize(
+            directory.path(),
+            RepositoryInitializationPolicy::EmptyOnly,
+        )?;
+        for name in ["Example Mod", "DISABLED_Example Mod"] {
+            fs::create_dir(root.path().join(name))?;
+            fs::write(root.path().join(name).join("main.ini"), b"[Constants]\n")?;
+        }
+
+        let scan = FileSystemModScanner::new()
+            .scan_repository(root, ScanCache::new())
+            .await?;
+        assert_eq!(scan.mods.len(), 2);
+        assert_ne!(
+            scan.mods[0].author_metadata.logical_id,
+            scan.mods[1].author_metadata.logical_id
+        );
+        assert_eq!(
+            scan.mods.iter().filter(|item| item.enabled_in_efmi).count(),
+            1
+        );
         Ok(())
     }
 }

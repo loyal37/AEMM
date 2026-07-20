@@ -1,10 +1,12 @@
 # Dependencies and build artifacts
 node_modules/
 dist/
+artifacts/
 src-tauri/target/
 
 # Local runtime data
 .aemm/
+data/
 *.db
 *.db-shm
 *.db-wal

@@ -5,10 +5,9 @@ use crate::{
     database::Database,
     errors::AppError,
     models::{
-        AppBootstrap, AppSettings, ConflictReport, DetectedGameInstallation, GameLaunchResult,
-        GameStatus, LaunchMode, LocalModMetadata, ModDeploymentMutationResult, ModDetails,
-        ModImportPlan, ModInstallResult, ModListItem, ModMutationResult, ModPreview, ModScanResult,
-        Profile, ProfileSwitchResult,
+        AppBootstrap, AppSettings, ConflictReport, GameStatus, LocalModMetadata,
+        ModDeploymentMutationResult, ModDetails, ModImportPlan, ModInstallResult, ModListItem,
+        ModMutationResult, ModPreview, ModScanResult, Profile, ProfileSwitchResult,
     },
 };
 
@@ -33,6 +32,7 @@ impl AppServices {
     pub async fn initialize(app: &AppHandle) -> Result<Self, AppError> {
         let paths = AppPaths::resolve(app)?;
         paths.ensure_base_directories().await?;
+        paths.migrate_legacy_app_data(app).await?;
 
         let settings = SettingsService::load_or_create(&paths).await?;
         let current_settings = settings.get().await;
@@ -116,56 +116,30 @@ impl AppServices {
         let current = self.settings.get().await;
         if settings.game != current.game || settings.storage != current.storage {
             return Err(AppError::ConfigValidation(
-                "游戏与存储路径必须通过各自的验证命令修改。".to_owned(),
+                "EFMI Mods 与便携存储路径必须通过专用验证流程修改。".to_owned(),
             ));
         }
         self.settings.update(settings).await
-    }
-
-    pub async fn configure_storage(
-        &self,
-        storage: crate::models::StorageSettings,
-    ) -> Result<AppSettings, AppError> {
-        self.mods.configure_storage(storage).await
-    }
-
-    pub async fn game_status(&self) -> Result<GameStatus, AppError> {
-        self.game.status().await
-    }
-
-    pub async fn detect_game_installations(
-        &self,
-    ) -> Result<Vec<DetectedGameInstallation>, AppError> {
-        self.game.detect_installations().await
-    }
-
-    pub async fn configure_game_installation(
-        &self,
-        path: &std::path::Path,
-    ) -> Result<GameStatus, AppError> {
-        self.game.configure_installation(path).await
     }
 
     pub async fn configure_efmi_loader(
         &self,
         path: Option<&std::path::Path>,
     ) -> Result<GameStatus, AppError> {
-        self.game.configure_loader(path).await
-    }
-
-    pub async fn set_game_launch_mode(
-        &self,
-        launch_mode: LaunchMode,
-    ) -> Result<GameStatus, AppError> {
-        self.game.set_launch_mode(launch_mode).await
-    }
-
-    pub async fn validated_game_directory(&self) -> Result<std::path::PathBuf, AppError> {
-        self.game.validated_game_directory().await
-    }
-
-    pub async fn launch_game(&self) -> Result<GameLaunchResult, AppError> {
-        self.game.launch().await
+        let status = self.game.configure_loader(path).await?;
+        if let Some(root) = status
+            .loader
+            .as_ref()
+            .and_then(|loader| loader.root.as_ref())
+        {
+            self.mods
+                .configure_storage(crate::models::StorageSettings {
+                    repository_path: root.join("Mods"),
+                    staging_path: self.paths.staging_directory.clone(),
+                })
+                .await?;
+        }
+        Ok(status)
     }
 
     pub async fn scan_mod_repository(&self) -> Result<ModScanResult, AppError> {

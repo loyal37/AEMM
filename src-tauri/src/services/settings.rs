@@ -30,7 +30,7 @@ impl SettingsService {
     pub async fn load_or_create(paths: &AppPaths) -> Result<Self, AppError> {
         recover_interrupted_write(&paths.config_file).await?;
 
-        let settings = if tokio::fs::try_exists(&paths.config_file)
+        let mut settings = if tokio::fs::try_exists(&paths.config_file)
             .await
             .map_err(|source| AppError::file_system(&paths.config_file, source))?
         {
@@ -45,6 +45,13 @@ impl SettingsService {
             )
         };
 
+        // AEMM directly manages EFMI/Mods. Legacy repository and cache paths are
+        // intentionally ignored so all manager-owned data remains portable.
+        if let Some(loader_root) = settings.game.loader_root.as_ref() {
+            settings.storage.repository_path = loader_root.join("Mods");
+        }
+        settings.storage.staging_path = paths.staging_directory.clone();
+
         validate_settings(&settings)?;
         prepare_storage_directories(&settings).await?;
 
@@ -54,13 +61,8 @@ impl SettingsService {
             write_lock: Arc::new(Mutex::new(())),
         };
 
-        if !tokio::fs::try_exists(&service.config_file)
-            .await
-            .map_err(|source| AppError::file_system(&service.config_file, source))?
-        {
-            let initial = service.get().await;
-            service.persist(&initial).await?;
-        }
+        let normalized = service.get().await;
+        service.persist(&normalized).await?;
 
         Ok(service)
     }

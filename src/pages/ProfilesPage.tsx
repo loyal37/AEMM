@@ -87,7 +87,7 @@ export function ProfilesPage() {
 
   const deleteProfile = async (profile: Profile) => {
     const confirmed = window.confirm(
-      `确定删除 Profile“${profile.name}”吗？模组仓库中的原始文件不会被删除。`,
+      `确定删除 Profile“${profile.name}”吗？EFMI Mods 中的模组文件不会被删除。`,
     );
     if (!confirmed) return;
     try {
@@ -372,7 +372,7 @@ export function ProfilesPage() {
 
       {active ? (
         <p className="profile-page__footnote">
-          当前活动 Profile：<strong>{active.name}</strong>。切换会重新验证 EFMI 根目录、仓库内容指纹和每份部署所有权清单。
+          当前活动 Profile：<strong>{active.name}</strong>。切换会在 EFMI Mods 内原地同步 DISABLED 状态；不会复制模组文件。
         </p>
       ) : null}
     </div>

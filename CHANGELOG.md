@@ -4,6 +4,15 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 
 ## [Unreleased]
 
+### Product correction
+
+- Changed AEMM from a separate repository/game launcher model to direct management of the configured EFMI `Mods` directory.
+- Added `efmi.direct-folder.v1`: normal folders are enabled and `DISABLED_` folders are disabled; state changes use collision-checked atomic rename with filesystem rollback on database failure.
+- Added physical-state reconciliation during scanning, including stable inferred identities across enable/disable and safe disambiguation when both active and disabled same-name folders coexist.
+- Moved `config.json`, `mods.db`, logs, and staging to `<software-directory>/data`, with a one-time copy from legacy AppData locations when portable files are absent.
+- Removed registered game detection, game directory, launch-mode, open-directory, and process-launch commands plus all matching Dashboard/Settings/Sidebar UI.
+- Reworked responsive layout: no global minimum CSS width, wrapping toolbars/actions, compact sidebar, single-column settings at constrained widths, and an 820×600 desktop minimum.
+
 ### Added
 
 - Initial product, architecture, data model, workflow, and security design.

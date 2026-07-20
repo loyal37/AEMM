@@ -232,7 +232,7 @@ export function ImportModDialog({
               <div className="import-success">
                 <CheckCircle2 size={42} />
                 <h3>{result.name} 已安装</h3>
-                <p>模组文件已安全提交到仓库，数据库与列表也已同步。</p>
+                <p>模组文件已安全提交到 EFMI Mods，数据库与列表也已同步。</p>
                 <code>{result.repositoryPath}</code>
                 <button className="button button--primary" type="button" onClick={() => void closeDialog()}>
                   完成

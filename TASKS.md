@@ -2,6 +2,17 @@
 
 Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 
+## Product correction — Direct EFMI Mods manager
+
+- [x] Move config, SQLite, logs, and staging to the software-local `data` directory with one-time legacy AppData copy.
+- [x] Treat validated EFMI `Mods` as the only scanned/imported mod root without adding an AEMM repository marker.
+- [x] Reconcile normal/`DISABLED*` folders into the active Profile and direct-state manifests during scanning.
+- [x] Replace copy deployment with collision-safe, rollback-capable in-place directory renames.
+- [x] Preserve conflict analysis and Profile persistence over direct-state manifests.
+- [x] Remove game discovery/open/launch commands and all game-management/launch UI.
+- [x] Fix responsive overflow with wrapping controls, compact navigation, single-column settings, and an 820×600 minimum window.
+- [~] Remove deprecated game/config DTO fields and legacy `efmi.copy.v1` code in a versioned schema cleanup after portable migration compatibility has shipped.
+
 ## Phase 1 — Foundation
 
 - [x] Analyze product requirements and document architecture/data flows.

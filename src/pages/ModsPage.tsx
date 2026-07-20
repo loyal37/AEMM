@@ -21,7 +21,6 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
 import { ConflictReportPanel } from "../features/conflicts/ConflictReportPanel";
 import { useConflictReport } from "../features/conflicts/useConflictReport";
-import { useGameStatus } from "../features/game/useGameManager";
 import {
   applyModQuery,
   defaultModFilters,
@@ -44,7 +43,6 @@ export function ModsPage() {
   const bootstrap = useAppBootstrap();
   const mods = useInstalledMods();
   const conflicts = useConflictReport();
-  const gameStatus = useGameStatus();
   const scan = useScanMods();
   const favorite = useSetModFavorite();
   const deployment = useSetModsEnabled();
@@ -75,7 +73,7 @@ export function ModsPage() {
     [allMods, conflictedModIds, deferredQuery, filters],
   );
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
-  const deploymentAvailable = desktopReady && gameStatus.data?.loader?.valid === true;
+  const deploymentAvailable = desktopReady && Boolean(bootstrap.data?.settings.game.loaderRoot);
   const selectedItems = allMods.filter((item) => selectedIds.has(item.id));
   const selectedIncludesEnabled = selectedItems.some((item) => item.enabled);
   const openImport = useCallback(() => setImportOpen(true), []);
@@ -114,9 +112,9 @@ export function ModsPage() {
   return (
     <div className="page-stack page-stack--mods">
       <PageHeader
-        eyebrow="模组仓库"
+        eyebrow="EFMI Mods"
         title="模组"
-        description="扫描、检索和整理仓库中的模组，或通过隔离暂存、确认计划与自动回滚安全导入新模组。"
+        description="直接扫描、检索和整理 EFMI Mods，启停通过 DISABLED 前缀原地切换。"
         actions={
           <>
             <button
@@ -126,7 +124,7 @@ export function ModsPage() {
               onClick={() => scan.mutate()}
             >
               <RefreshCw className={scan.isPending ? "spin" : undefined} size={17} />
-              {scan.isPending ? "正在扫描…" : "扫描仓库"}
+              {scan.isPending ? "正在扫描…" : "扫描 Mods"}
             </button>
             <button
               className="button button--primary"
@@ -315,7 +313,7 @@ export function ModsPage() {
               className="button button--primary"
               type="button"
               disabled={!deploymentAvailable || deployment.isPending}
-              title={!deploymentAvailable ? "请先配置有效的 EFMI 加载器" : undefined}
+              title={!deploymentAvailable ? "请先配置 EFMI Mods 目录" : undefined}
               onClick={() =>
                 deployment.mutate({ modIds: [...selectedIds], enabled: true })
               }
@@ -326,7 +324,7 @@ export function ModsPage() {
               className="button button--secondary"
               type="button"
               disabled={!deploymentAvailable || deployment.isPending}
-              title={!deploymentAvailable ? "请先配置有效的 EFMI 加载器" : undefined}
+              title={!deploymentAvailable ? "请先配置 EFMI Mods 目录" : undefined}
               onClick={() =>
                 deployment.mutate({ modIds: [...selectedIds], enabled: false })
               }
@@ -364,7 +362,7 @@ export function ModsPage() {
               }
               title={selectedIncludesEnabled ? "请先禁用选中的模组再卸载" : undefined}
               onClick={() => {
-                if (!window.confirm(`确定卸载选中的 ${selectedIds.size} 个模组吗？此操作会删除 AEMM 仓库中的模组本体，并从所有 Profile 中移除对应记录。`)) return;
+                if (!window.confirm(`确定删除选中的 ${selectedIds.size} 个模组吗？此操作会从 EFMI Mods 中永久删除模组目录，并从所有 Profile 中移除对应记录。`)) return;
                 uninstall.mutate([...selectedIds], {
                   onSuccess: () => setSelectedIds(new Set()),
                 });
@@ -412,7 +410,7 @@ export function ModsPage() {
         <section className="panel panel--fill">
           <EmptyState
             icon={Archive}
-            title={allMods.length ? "没有符合条件的模组" : "模组仓库是空的"}
+            title={allMods.length ? "没有符合条件的模组" : "EFMI Mods 是空的"}
             description={
               allMods.length
                 ? "调整搜索、分类或状态筛选后再试。"

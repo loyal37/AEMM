@@ -4,6 +4,7 @@ use async_trait::async_trait;
 
 use crate::{
     core::conflicts::{AnalyzerOutput, ConflictAnalysisSubject, ConflictAnalyzer, conflict_id},
+    core::deployment::EFMI_DIRECT_STRATEGY_ID,
     errors::AppError,
     models::{Conflict, ConflictEvidence, ConflictKind, ConflictParticipant, ConflictSeverity},
     utils::validate_relative_path,
@@ -33,7 +34,19 @@ impl ConflictAnalyzer for DeploymentPathConflictAnalyzer {
     ) -> Result<AnalyzerOutput, AppError> {
         let mut targets: BTreeMap<String, Vec<PathOccurrence>> = BTreeMap::new();
         for (subject_index, subject) in subjects.iter().enumerate() {
-            validate_relative_path(&subject.manifest.destination_directory)?;
+            let direct = subject.manifest.strategy_id == EFMI_DIRECT_STRATEGY_ID;
+            if direct {
+                if !subject.manifest.destination_directory.is_absolute()
+                    || subject.manifest.destination_directory.parent()
+                        != Some(subject.manifest.destination_root.as_path())
+                {
+                    return Err(AppError::UnsafePath(
+                        "EFMI 原地模组清单不是 Mods 的直属目录。".to_owned(),
+                    ));
+                }
+            } else {
+                validate_relative_path(&subject.manifest.destination_directory)?;
+            }
             for entry in &subject.manifest.entries {
                 validate_relative_path(&entry.destination_relative)?;
                 let target_path = subject

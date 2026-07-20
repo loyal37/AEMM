@@ -2,7 +2,7 @@
 
 ## Project goal
 
-Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for *Arknights: Endfield* mods. It provides a safe local mod repository, pluggable deployment into a loader/game layout, profiles, metadata, conflict analysis, and eventually online discovery, updates, dependencies, version management, multi-game support, and cloud profile sync.
+Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for the existing EFMI `Mods` directory used by *Arknights: Endfield* mods. It scans, imports, enables, disables, removes, profiles, and analyzes those folders in place. AEMM is deliberately not a game manager or launcher.
 
 ## Technology stack
 
@@ -13,6 +13,17 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - Package manager: pnpm (the npm-compatible scripts remain `npm run ...` compatible after `npm install`)
 
 ## Current implementation status
+
+### Product-direction correction (2026-07-20)
+
+- The earlier game detection/launch and separate AEMM repository product assumptions are superseded.
+- EFMI `Mods` is now the only mod content root. AEMM does not create or present a second mod repository.
+- Existing normal folders are enabled; `DISABLED*` folders are disabled. Enable/disable uses collision-checked atomic rename in the same `Mods` directory and never copies or deletes the mod body.
+- EFMI validation no longer depends on the game installation or `d3dx.ini` launch target. The desktop command surface exposes EFMI Mods configuration, not game detection/open/launch commands.
+- AEMM-owned `config.json`, `mods.db`, rolling logs, and staging data are portable under `<software-directory>/data`. Legacy AppData config/database/logs are copied once when the portable files are absent; subsequent writes use only the portable paths.
+- The Settings, Dashboard, Sidebar, Mods, details, Profiles, and onboarding copy now describe direct EFMI Mods management and contain no game-launch UX.
+- The shell has no CSS minimum-width lock. Toolbars wrap, settings collapse to one column, the sidebar compacts at 960 CSS pixels, and the supported Tauri minimum window is 820×600.
+- Direct-state and duplicate active/disabled folder tests are present. Current validation is 72 passing default Rust tests plus five explicitly ignored legacy copy-deployment regression fixtures pending removal in the schema-cleanup follow-up.
 
 - Phase 1 foundation through Phase 10 audit/release hardening are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
@@ -126,7 +137,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 
 ## Important decisions
 
-1. AEMM owns a canonical mod repository; enabled content is deployed to a game/loader target by a `ModDeploymentStrategy` implementation. Disabling reverses deployment and preserves the repository copy.
+1. EFMI `Mods` is the canonical mod content root. AEMM treats it as externally owned, validates it without writing an ownership marker, and never deletes the root. Enable/disable is an in-place `DISABLED_` rename strategy.
 2. Tauri commands are thin adapters over `AppServices`; core logic is UI-independent.
 3. SQLite stores relational/queryable state. `config.json` stores machine-specific paths and application preferences.
 4. Author metadata and AEMM-local overrides are separate models and database tables. AEMM never rewrites an author's `mod.json`.
@@ -134,9 +145,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 6. Deployment and conflict detection are capability interfaces because EFMI/3DMigoto semantics differ from ordinary file-replacement mods.
 7. Frontend/server contracts use explicit DTOs. Database rows and domain entities are not exposed directly to the UI.
 8. Phase 1 uses a versioned SQL migration directory from the beginning.
-9. Game discovery and identity validation are separate from loader validation. A valid EFMI directory can be saved while `launch_ready` remains false, so stale third-party configuration is visible without being executed.
-10. Process launch never accepts a frontend executable or argument list. The backend rebuilds a launch specification from saved settings, revalidates it, and requires the executable to be a direct child of its canonical working directory.
-11. Game versions are reported only from a future authoritative manifest/version source. Engine/file versions and launcher application versions are retained as evidence only, not presented as the game version.
+9. Game discovery, game version reporting, directory opening, and process launch are outside AEMM's current product scope and are not registered on the Tauri command surface.
 12. A custom mod repository is accepted only when it is empty or already carries a valid AEMM ownership marker. The application default may be adopted during upgrade because it is resolved from AEMM's own app-data root.
 13. Phase 3 uses BLAKE3 for content identity and persists file modification timestamps as an incremental cache hint. Content fingerprints remain based on normalized path, size, and content hash so timestamp-only changes do not masquerade as mod updates.
 14. Every direct child directory of the repository is one installed mod. Archive/package root discovery remains an installer concern and is deliberately deferred to Phase 5.

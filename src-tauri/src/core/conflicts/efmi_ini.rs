@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use crate::{
     core::{
         conflicts::{AnalyzerOutput, ConflictAnalysisSubject, ConflictAnalyzer, conflict_id},
-        deployment::verify_deployment_marker,
+        deployment::{EFMI_DIRECT_STRATEGY_ID, verify_deployment_marker},
         mods::path_is_link_or_reparse_point,
     },
     errors::AppError,
@@ -343,6 +343,37 @@ fn append_fact_conflicts(
 }
 
 fn active_deployment_root(subject: &ConflictAnalysisSubject) -> Result<PathBuf, AppError> {
+    if subject.manifest.strategy_id == EFMI_DIRECT_STRATEGY_ID {
+        if path_is_link_or_reparse_point(&subject.manifest.destination_root)?
+            || path_is_link_or_reparse_point(&subject.manifest.destination_directory)?
+        {
+            return Err(AppError::UnsafePath(
+                "EFMI Mods 或模组目录是链接或重解析点。".to_owned(),
+            ));
+        }
+        let mods_root = fs::canonicalize(&subject.manifest.destination_root)
+            .map_err(|source| AppError::file_system(&subject.manifest.destination_root, source))?;
+        let canonical =
+            fs::canonicalize(&subject.manifest.destination_directory).map_err(|source| {
+                AppError::file_system(&subject.manifest.destination_directory, source)
+            })?;
+        let name = canonical
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| AppError::UnsafePath("EFMI 模组目录名称无效。".to_owned()))?;
+        if !canonical.is_dir()
+            || canonical.parent() != Some(mods_root.as_path())
+            || name
+                .get(..8)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("DISABLED"))
+        {
+            return Err(AppError::UnsafePath(
+                "启用模组不是 EFMI Mods 中的安全直属目录。".to_owned(),
+            ));
+        }
+        return Ok(canonical);
+    }
+
     validate_relative_path(&subject.manifest.destination_directory)?;
     if path_is_link_or_reparse_point(&subject.manifest.destination_root)? {
         return Err(AppError::UnsafePath(

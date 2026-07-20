@@ -52,7 +52,7 @@ html,
 body,
 #root {
   width: 100%;
-  min-width: 960px;
+  min-width: 0;
   min-height: 100%;
   margin: 0;
 }
@@ -343,6 +343,8 @@ select:disabled {
 }
 
 .workspace {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
 }
@@ -410,14 +412,18 @@ select:disabled {
 }
 
 .page-container {
+  min-width: 0;
+  flex: 1;
   height: calc(100vh - 68px);
   padding: 30px clamp(26px, 4vw, 50px) 48px;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-color: #323846 transparent;
   scrollbar-width: thin;
 }
 
 .page-stack {
+  min-width: 0;
   display: grid;
   gap: 22px;
   width: min(1220px, 100%);
@@ -426,6 +432,7 @@ select:disabled {
 
 .page-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
@@ -448,6 +455,7 @@ select:disabled {
 
 .page-header__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
 }
 
@@ -830,6 +838,7 @@ select:disabled {
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
 }
 
@@ -839,12 +848,14 @@ select:disabled {
 
 .mod-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 8px;
 }
 
 .mod-search {
-  min-width: 220px;
+  flex: 1 1 260px;
+  min-width: 0;
 }
 
 .search-field__clear {
@@ -867,9 +878,11 @@ select:disabled {
 .compact-select {
   position: relative;
   display: flex;
+  flex: 1 1 116px;
 }
 
 .compact-select select {
+  width: 100%;
   min-width: 116px;
   padding: 0 31px 0 11px;
   color: var(--text-soft);
@@ -1446,6 +1459,13 @@ select:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 13px;
+}
+
+.settings-safety-note {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .game-settings-panel {
@@ -3302,13 +3322,21 @@ select:disabled {
   color: var(--text-soft);
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1280px) {
   .app-shell {
-    grid-template-columns: 216px minmax(0, 1fr);
+    grid-template-columns: 196px minmax(0, 1fr);
   }
 
   .sidebar {
     padding-inline: 12px;
+  }
+
+  .page-container {
+    padding-inline: 22px;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
   }
 
   .stats-grid {
@@ -3352,6 +3380,78 @@ select:disabled {
   .mod-files__header,
   .mod-file-row {
     grid-template-columns: minmax(240px, 1fr) 90px 76px 100px;
+  }
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    align-items: center;
+    padding-inline: 9px;
+  }
+
+  .brand {
+    padding-inline: 0;
+  }
+
+  .brand > div:last-child,
+  .nav-item span,
+  .sidebar-footer .eyebrow,
+  .game-chip > div {
+    display: none;
+  }
+
+  .nav-list,
+  .nav-item {
+    width: 100%;
+  }
+
+  .nav-item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar-footer {
+    display: grid;
+    width: 100%;
+    place-items: center;
+    padding-inline: 0;
+  }
+
+  .game-chip {
+    margin-top: 3px;
+  }
+
+  .top-bar {
+    padding-inline: 18px;
+  }
+
+  .page-container {
+    padding: 22px 18px 36px;
+  }
+
+  .hero-card,
+  .path-setting-row,
+  .launch-mode-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hero-card__content {
+    min-width: 0;
+  }
+
+  .path-setting-row__actions,
+  .path-setting-row__actions .button,
+  .select-field {
+    width: 100%;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
   }
 }
 

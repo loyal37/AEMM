@@ -498,6 +498,29 @@ impl ProfileStore {
             ));
         }
 
+        for manifest in &plan.source_manifests {
+            if manifest.strategy_id == "efmi.direct-folder.v1" {
+                let name = manifest_directory_name(manifest)?;
+                sqlx::query("UPDATE mods SET repository_path = ?, updated_at = ? WHERE id = ?")
+                    .bind(format!("DISABLED_{name}"))
+                    .bind(now)
+                    .bind(manifest.mod_id.to_string())
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+        }
+        for manifest in target_manifests {
+            if manifest.strategy_id == "efmi.direct-folder.v1" {
+                let name = manifest_directory_name(manifest)?;
+                sqlx::query("UPDATE mods SET repository_path = ?, updated_at = ? WHERE id = ?")
+                    .bind(name)
+                    .bind(now)
+                    .bind(manifest.mod_id.to_string())
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+        }
+
         let deleted = sqlx::query("DELETE FROM deployment_records WHERE profile_id = ?")
             .bind(plan.source_profile_id.to_string())
             .execute(&mut *transaction)
@@ -546,6 +569,15 @@ impl ProfileStore {
         transaction.commit().await?;
         Ok(())
     }
+}
+
+fn manifest_directory_name(manifest: &DeploymentManifest) -> Result<&str, AppError> {
+    manifest
+        .destination_directory
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::DataIntegrity("EFMI 原地状态清单缺少有效目录名称。".to_owned()))
 }
 
 async fn ensure_profile_exists(

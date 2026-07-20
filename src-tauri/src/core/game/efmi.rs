@@ -1,9 +1,6 @@
 use std::{collections::HashMap, fs, path::Path, path::PathBuf};
 
-use crate::{
-    errors::AppError,
-    models::{EfmiValidation, LaunchSpec},
-};
+use crate::{errors::AppError, models::EfmiValidation};
 
 const MAX_INI_BYTES: u64 = 1024 * 1024;
 const LOADER_EXECUTABLE: &str = "3DMigotoLoader.exe";
@@ -16,44 +13,15 @@ impl EfmiAdapter {
         Self
     }
 
-    pub async fn validate(
-        &self,
-        candidate: &Path,
-        game_executable: &Path,
-    ) -> Result<EfmiValidation, AppError> {
+    pub async fn validate(&self, candidate: &Path) -> Result<EfmiValidation, AppError> {
         let candidate = candidate.to_path_buf();
-        let game_executable = game_executable.to_path_buf();
-        tokio::task::spawn_blocking(move || validate_sync(&candidate, &game_executable))
+        tokio::task::spawn_blocking(move || validate_sync(&candidate))
             .await
             .map_err(AppError::from)
     }
-
-    pub fn launch_spec(&self, validation: &EfmiValidation) -> Result<LaunchSpec, AppError> {
-        if !validation.valid || !validation.launch_ready {
-            return Err(AppError::NotAvailable(
-                "EFMI 加载器未通过启动校验，请检查加载器路径与 d3dx.ini 的 launch 设置。"
-                    .to_owned(),
-            ));
-        }
-
-        let executable = validation
-            .executable
-            .clone()
-            .ok_or_else(|| AppError::NotAvailable("EFMI 启动程序路径不可用。".to_owned()))?;
-        let working_directory = validation
-            .root
-            .clone()
-            .ok_or_else(|| AppError::NotAvailable("EFMI 根目录不可用。".to_owned()))?;
-
-        Ok(LaunchSpec {
-            executable,
-            working_directory,
-            arguments: Vec::new(),
-        })
-    }
 }
 
-fn validate_sync(candidate: &Path, game_executable: &Path) -> EfmiValidation {
+fn validate_sync(candidate: &Path) -> EfmiValidation {
     let mut evidence = Vec::new();
     let mut issues = Vec::new();
 
@@ -69,14 +37,6 @@ fn validate_sync(candidate: &Path, game_executable: &Path) -> EfmiValidation {
             return invalid_validation(evidence, issues);
         }
     };
-    let game_executable = match fs::canonicalize(game_executable) {
-        Ok(path) if path.is_file() => path,
-        _ => {
-            issues.push("已配置的游戏可执行文件已失效。".to_owned());
-            return invalid_validation(evidence, issues);
-        }
-    };
-
     let loader_executable = match canonical_direct_file(&root, LOADER_EXECUTABLE) {
         Some(path) => {
             evidence.push(format!("找到 {LOADER_EXECUTABLE}。"));
@@ -155,23 +115,9 @@ fn validate_sync(candidate: &Path, game_executable: &Path) -> EfmiValidation {
             root.join(value)
         }
     });
-    let launch_ready = configured_game_executable
-        .as_deref()
-        .and_then(|path| fs::canonicalize(path).ok())
-        .is_some_and(|path| path == game_executable);
-
-    if launch_ready {
-        evidence.push("d3dx.ini 的 launch 路径与当前游戏可执行文件一致。".to_owned());
-    } else {
-        issues.push(
-            "d3dx.ini 的 launch 路径缺失、已失效或与当前游戏目录不一致；在修正前不能通过 EFMI 启动。"
-                .to_owned(),
-        );
-    }
-
     EfmiValidation {
         valid: true,
-        launch_ready,
+        launch_ready: false,
         root: Some(root),
         executable: Some(loader_executable),
         configured_game_executable,
@@ -263,18 +209,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accepts_launch_ready_efmi_layout() -> Result<(), Box<dyn std::error::Error>> {
+    async fn accepts_efmi_layout_without_game_launch_validation()
+    -> Result<(), Box<dyn std::error::Error>> {
         let game = tempfile::tempdir()?;
         let game_executable = game.path().join("Endfield.exe");
         fs::write(&game_executable, b"fixture")?;
         let loader = tempfile::tempdir()?;
         create_fixture(loader.path(), &game_executable)?;
 
-        let validation = EfmiAdapter::new()
-            .validate(loader.path(), &game_executable)
-            .await?;
+        let validation = EfmiAdapter::new().validate(loader.path()).await?;
         assert!(validation.valid);
-        assert!(validation.launch_ready);
+        assert!(!validation.launch_ready);
         Ok(())
     }
 
@@ -289,12 +234,10 @@ mod tests {
         let loader = tempfile::tempdir()?;
         create_fixture(loader.path(), &other_game)?;
 
-        let validation = EfmiAdapter::new()
-            .validate(loader.path(), &game_executable)
-            .await?;
+        let validation = EfmiAdapter::new().validate(loader.path()).await?;
         assert!(validation.valid);
         assert!(!validation.launch_ready);
-        assert!(!validation.issues.is_empty());
+        assert!(validation.valid);
         Ok(())
     }
 
@@ -310,9 +253,7 @@ mod tests {
             "[Loader]\ntarget = OtherGame.exe\nmodule = d3d11.dll\n",
         )?;
 
-        let validation = EfmiAdapter::new()
-            .validate(loader.path(), &game_executable)
-            .await?;
+        let validation = EfmiAdapter::new().validate(loader.path()).await?;
         assert!(!validation.valid);
         Ok(())
     }

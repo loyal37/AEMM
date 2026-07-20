@@ -11,8 +11,8 @@ use crate::{
     core::mods::{CachedModFile, RepositoryScan, ScanCache},
     errors::AppError,
     models::{
-        LocalModMetadata, MetadataSourceKind, ModDetails, ModFileDetails, ModLifecycleState,
-        ModListItem,
+        DeploymentEntry, DeploymentManifest, LocalModMetadata, MetadataSourceKind, ModDetails,
+        ModFileDetails, ModLifecycleState, ModListItem,
     },
 };
 
@@ -98,6 +98,16 @@ impl ModStore {
         let mut transaction = self.pool.begin().await?;
         let mut outcome = ModSyncOutcome::default();
         let mut seen_ids = HashSet::new();
+        let active_profile_id: String =
+            sqlx::query_scalar("SELECT active_profile_id FROM app_state WHERE singleton = 1")
+                .fetch_one(&mut *transaction)
+                .await?;
+        let mut next_load_order: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(load_order), -1) + 1 FROM profile_mods WHERE profile_id = ?",
+        )
+        .bind(&active_profile_id)
+        .fetch_one(&mut *transaction)
+        .await?;
 
         for scanned_mod in &scan.mods {
             let repository_path = scanned_mod.repository_path.storage_key();
@@ -285,6 +295,91 @@ impl ModStore {
                 .bind(&file.content_hash)
                 .bind(&file.file_role)
                 .bind(file.modified_at)
+                .execute(&mut *transaction)
+                .await?;
+            }
+
+            let existing_order: Option<i64> = sqlx::query_scalar(
+                "SELECT load_order FROM profile_mods WHERE profile_id = ? AND mod_id = ?",
+            )
+            .bind(&active_profile_id)
+            .bind(&mod_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            let load_order = existing_order.unwrap_or_else(|| {
+                let current = next_load_order;
+                next_load_order = next_load_order.saturating_add(1);
+                current
+            });
+            let physically_enabled = scanned_mod.enabled_in_efmi && !scanned_mod.is_broken();
+            sqlx::query(
+                "INSERT INTO profile_mods (profile_id, mod_id, enabled, load_order)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(profile_id, mod_id)
+                 DO UPDATE SET enabled = excluded.enabled",
+            )
+            .bind(&active_profile_id)
+            .bind(&mod_id)
+            .bind(i64::from(physically_enabled))
+            .bind(load_order)
+            .execute(&mut *transaction)
+            .await?;
+
+            sqlx::query("DELETE FROM deployment_records WHERE profile_id = ? AND mod_id = ?")
+                .bind(&active_profile_id)
+                .bind(&mod_id)
+                .execute(&mut *transaction)
+                .await?;
+            if physically_enabled {
+                let mod_uuid = Uuid::parse_str(&mod_id).map_err(|_| {
+                    AppError::DataIntegrity("扫描得到的模组 UUID 无效。".to_owned())
+                })?;
+                let profile_uuid = Uuid::parse_str(&active_profile_id)
+                    .map_err(|_| AppError::DataIntegrity("当前 Profile UUID 无效。".to_owned()))?;
+                let destination_root = scanned_mod
+                    .root
+                    .parent()
+                    .ok_or_else(|| {
+                        AppError::DataIntegrity("EFMI 模组目录缺少 Mods 父目录。".to_owned())
+                    })?
+                    .to_path_buf();
+                let manifest = DeploymentManifest {
+                    schema_version: 1,
+                    id: Uuid::new_v4(),
+                    profile_id: profile_uuid,
+                    mod_id: mod_uuid,
+                    strategy_id: "efmi.direct-folder.v1".to_owned(),
+                    destination_root: destination_root.clone(),
+                    destination_directory: scanned_mod.root.clone(),
+                    source_content_fingerprint: scanned_mod.content_fingerprint.clone(),
+                    entries: scanned_mod
+                        .files
+                        .iter()
+                        .filter_map(|file| {
+                            file.content_hash.as_ref().map(|hash| DeploymentEntry {
+                                source_relative: file.source_path.clone(),
+                                destination_relative: file.source_path.clone(),
+                                size_bytes: file.size_bytes,
+                                content_hash: hash.clone(),
+                            })
+                        })
+                        .collect(),
+                    created_at: now,
+                };
+                let manifest_json =
+                    serde_json::to_string(&manifest).map_err(AppError::ConfigFormat)?;
+                sqlx::query(
+                    "INSERT INTO deployment_records
+                        (id, profile_id, mod_id, strategy_id, destination_root, manifest_json, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(manifest.id.to_string())
+                .bind(&active_profile_id)
+                .bind(&mod_id)
+                .bind(&manifest.strategy_id)
+                .bind(storage_path(&destination_root))
+                .bind(manifest_json)
+                .bind(now)
                 .execute(&mut *transaction)
                 .await?;
             }

@@ -8,6 +8,36 @@
 - Async boundaries: Tauri commands are async; blocking archive/filesystem work runs in bounded blocking tasks; database access uses an async SQLite pool.
 - Evolution over speculation: interfaces reserve known variation points, while online services and dependency resolution wait until their phases.
 
+## Current product boundary (supersedes the earlier Phase 2/6 runtime)
+
+AEMM manages EFMI `Mods` directly. It does not detect the game, report a game version, open the game directory, or launch either the game or EFMI. Older game-adapter and copy-deployment sections below remain as implementation history and migration context; they are not the current runtime contract.
+
+```mermaid
+flowchart LR
+  UI["React UI"] --> CMD["Thin Tauri commands"]
+  CMD --> SVC["AppServices"]
+  SVC --> DB["software/data/mods.db"]
+  SVC --> STAGE["software/data/staging"]
+  SVC --> MODS["validated EFMI/Mods"]
+  MODS --> ACTIVE["normal folder = enabled"]
+  MODS --> DISABLED["DISABLED_* folder = disabled"]
+  ACTIVE <-->|"atomic rename + SQLite transaction"| DISABLED
+```
+
+`RepositoryRoot::ExternalEfmiMods` validates that the selected root is a non-link directory named `Mods`; unlike an AEMM-owned staging root, it neither requires nor creates an ownership marker. Scanning inventories direct child directories, maps physical folder state into the active Profile, and creates read-only direct-state manifests for conflict analysis. Import commits staged content into this root without overwrite. Uninstall still requires a UUID-backed direct child and a recoverable tombstone transaction, and never deletes the `Mods` root.
+
+Manager-owned data is portable:
+
+```text
+<software-directory>/data/
+├─ config.json
+├─ mods.db
+├─ logs/
+└─ staging/
+```
+
+Development executables locate the repository root by `src-tauri/tauri.conf.json`; packaged portable executables use their own parent directory. AppData is only a legacy copy source and is never the destination for new SQLite or log writes.
+
 ## Runtime flow
 
 ```mermaid

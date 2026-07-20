@@ -18,7 +18,8 @@ After completing an important feature, update `PROJECT_CONTEXT.md`, `ARCHITECTUR
 ## Engineering rules
 
 - Keep Tauri commands as transport adapters. Business logic belongs in core modules and services that can be tested without a webview.
-- Preserve the boundaries between game adapters, mod storage, deployment strategies, metadata, conflicts, profiles, and persistence.
+- Preserve the boundaries between EFMI validation, direct mod storage/state, installation, metadata, conflicts, profiles, and persistence.
+- AEMM directly manages a validated EFMI `Mods` directory and is not a game manager or launcher. Do not reintroduce game discovery, game-path, or process-launch features without an explicit product decision.
 - Do not hard-code an unverified Endfield or loader layout into shared core logic.
 - Prefer mature, actively maintained crates and packages over custom infrastructure.
 - Production Rust code must propagate errors; avoid `unwrap()` and `expect()` outside narrowly justified tests or compile-time invariants.

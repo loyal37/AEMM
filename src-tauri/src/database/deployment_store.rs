@@ -125,6 +125,21 @@ impl DeploymentStore {
                     manifest.mod_id
                 )));
             }
+            if manifest.strategy_id == "efmi.direct-folder.v1" {
+                let directory = manifest
+                    .destination_directory
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| {
+                        AppError::DataIntegrity("EFMI 模组启用清单缺少有效目录名称。".to_owned())
+                    })?;
+                sqlx::query("UPDATE mods SET repository_path = ?, updated_at = ? WHERE id = ?")
+                    .bind(directory)
+                    .bind(now)
+                    .bind(manifest.mod_id.to_string())
+                    .execute(&mut *transaction)
+                    .await?;
+            }
             let existing_order: Option<i64> = sqlx::query_scalar(
                 "SELECT load_order FROM profile_mods WHERE profile_id = ? AND mod_id = ?",
             )
@@ -203,6 +218,21 @@ impl DeploymentStore {
         }
         for manifest in manifests {
             validate_manifest_identity(manifest, profile_id)?;
+            if manifest.strategy_id == "efmi.direct-folder.v1" {
+                let directory = manifest
+                    .destination_directory
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| {
+                        AppError::DataIntegrity("EFMI 模组禁用清单缺少有效目录名称。".to_owned())
+                    })?;
+                sqlx::query("UPDATE mods SET repository_path = ?, updated_at = ? WHERE id = ?")
+                    .bind(format!("DISABLED_{directory}"))
+                    .bind(now)
+                    .bind(manifest.mod_id.to_string())
+                    .execute(&mut *transaction)
+                    .await?;
+            }
             let deleted = sqlx::query(
                 "DELETE FROM deployment_records
                  WHERE id = ? AND profile_id = ? AND mod_id = ?",

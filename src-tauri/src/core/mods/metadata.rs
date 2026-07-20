@@ -191,6 +191,7 @@ fn infer_metadata(
     let name = mod_root
         .file_name()
         .map(|value| value.to_string_lossy().trim().to_owned())
+        .map(|value| strip_disabled_prefix(&value).to_owned())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "未命名模组".to_owned());
     let digest = blake3::hash(repository_key.to_lowercase().as_bytes());
@@ -215,6 +216,20 @@ fn infer_metadata(
             source_kind: MetadataSourceKind::Inferred,
         },
         warnings,
+    }
+}
+
+fn strip_disabled_prefix(value: &str) -> &str {
+    if value
+        .get(..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("DISABLED"))
+    {
+        value
+            .get(8..)
+            .unwrap_or_default()
+            .trim_start_matches(['_', '-', ' '])
+    } else {
+        value
     }
 }
 

@@ -4,9 +4,6 @@ import type {
   AppBootstrap,
   AppSettings,
   ConflictReport,
-  DetectedGameInstallation,
-  GameLaunchMode,
-  GameLaunchResult,
   GameStatus,
   LocalModMetadata,
   ModDetails,
@@ -20,7 +17,6 @@ import type {
   ModScanResult,
   Profile,
   ProfileSwitchResult,
-  StorageSettings,
 } from "../types/app";
 import {
   getPreviewDetails,
@@ -89,64 +85,15 @@ export async function updateSettings(settings: AppSettings): Promise<AppSettings
   return invoke<AppSettings>("update_settings", { settings });
 }
 
-export async function setStoragePaths(storage: StorageSettings): Promise<AppSettings> {
-  if (!isTauri()) {
-    previewSettings = { ...previewSettings, storage: structuredClone(storage) };
-    return structuredClone(previewSettings);
-  }
-  return invoke<AppSettings>("set_storage_paths", { storage });
-}
-
-const previewGameStatus: GameStatus = {
-  configured: false,
-  installation: null,
-  loader: null,
-  launchMode: "efmiLoader",
-  canLaunch: false,
-  launchBlockReason: "仅桌面模式可以管理游戏路径。",
-};
-
 function requireDesktop(): void {
   if (!isTauri()) {
     throw new Error("该操作仅在 AEMM 桌面应用中可用。");
   }
 }
 
-export async function getGameStatus(): Promise<GameStatus> {
-  if (!isTauri()) {
-    return previewGameStatus;
-  }
-  return invoke<GameStatus>("get_game_status");
-}
-
-export async function detectGameInstallations(): Promise<DetectedGameInstallation[]> {
+export async function setEfmiModsDirectory(path: string): Promise<GameStatus> {
   requireDesktop();
-  return invoke<DetectedGameInstallation[]>("detect_game_installations");
-}
-
-export async function setGameInstallation(path: string): Promise<GameStatus> {
-  requireDesktop();
-  return invoke<GameStatus>("set_game_installation", { path });
-}
-
-export async function setEfmiLoaderRoot(path: string | null): Promise<GameStatus> {
-  requireDesktop();
-  return invoke<GameStatus>("set_efmi_loader_root", { path });
-}
-
-export async function setGameLaunchMode(launchMode: GameLaunchMode): Promise<GameStatus> {
-  requireDesktop();
-  return invoke<GameStatus>("set_game_launch_mode", { launchMode });
-}
-
-export async function openGameDirectory(): Promise<void> {
-  requireDesktop();
-  return invoke<void>("open_game_directory");
-}
-
-export async function launchGame(): Promise<GameLaunchResult> {
-  requireDesktop();
-  return invoke<GameLaunchResult>("launch_game");
+  return invoke<GameStatus>("set_efmi_mods_directory", { path });
 }
 
 export function commandErrorMessage(error: unknown): string {

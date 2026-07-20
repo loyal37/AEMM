@@ -23,7 +23,6 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { useAppBootstrap } from "../features/bootstrap/useAppBootstrap";
 import { ConflictReportPanel } from "../features/conflicts/ConflictReportPanel";
 import { useConflictReport } from "../features/conflicts/useConflictReport";
-import { useGameStatus } from "../features/game/useGameManager";
 import {
   formatFileSize,
   formatTimestamp,
@@ -48,13 +47,12 @@ export function ModDetailPage() {
   const bootstrap = useAppBootstrap();
   const details = useModDetails(modId);
   const conflicts = useConflictReport();
-  const gameStatus = useGameStatus();
   const favorite = useSetModFavorite();
   const deployment = useSetModsEnabled();
   const uninstall = useUninstallMods();
   const openDirectory = useOpenModDirectory();
   const desktopReady = bootstrap.data?.runtimeMode === "desktop";
-  const deploymentAvailable = desktopReady && gameStatus.data?.loader?.valid === true;
+  const deploymentAvailable = desktopReady && Boolean(bootstrap.data?.settings.game.loaderRoot);
 
   if (details.isPending) {
     return (
@@ -128,7 +126,7 @@ export function ModDetailPage() {
                 !deploymentAvailable ||
                 deployment.isPending
               }
-              title={!deploymentAvailable ? "请先配置有效的 EFMI 加载器" : undefined}
+              title={!deploymentAvailable ? "请先配置 EFMI Mods 目录" : undefined}
               onClick={() =>
                 deployment.mutate({ modIds: [item.id], enabled: !item.enabled })
               }
@@ -165,7 +163,7 @@ export function ModDetailPage() {
               disabled={item.enabled || uninstall.isPending || deployment.isPending}
               title={item.enabled ? "请先禁用模组再卸载" : undefined}
               onClick={() => {
-                if (!window.confirm(`确定卸载“${item.name}”吗？此操作会删除 AEMM 仓库中的模组本体，并从所有 Profile 中移除对应记录。`)) return;
+                if (!window.confirm(`确定删除“${item.name}”吗？此操作会从 EFMI Mods 中永久删除模组目录，并从所有 Profile 中移除对应记录。`)) return;
                 uninstall.mutate([item.id], { onSuccess: () => navigate("/mods") });
               }}
             >
@@ -190,7 +188,7 @@ export function ModDetailPage() {
           <AlertTriangle size={18} />
           <div>
             <strong>该模组需要检查</strong>
-            <span>仓库文件可能缺失、包含不安全条目或在最近一次扫描时无法读取。</span>
+            <span>EFMI Mods 中的文件可能缺失、包含不安全条目或在最近一次扫描时无法读取。</span>
           </div>
         </div>
       ) : null}
@@ -215,7 +213,7 @@ export function ModDetailPage() {
             <div><dt>原始名称</dt><dd>{data.authorName}</dd></div>
             <div><dt>原始分类</dt><dd>{data.authorCategory ?? "未声明"}</dd></div>
             <div><dt>逻辑 ID</dt><dd><code>{item.logicalId}</code></dd></div>
-            <div><dt>仓库路径</dt><dd><code>{item.repositoryPath}</code></dd></div>
+            <div><dt>Mods 目录名</dt><dd><code>{item.repositoryPath}</code></dd></div>
             <div>
               <dt>作者网站</dt>
               <dd className="untrusted-url">
@@ -253,7 +251,7 @@ export function ModDetailPage() {
         <div className="panel__header">
           <div>
             <span className="eyebrow">文件清单</span>
-            <h2>{data.files.length} 个仓库文件</h2>
+            <h2>{data.files.length} 个模组文件</h2>
           </div>
           <span className="file-inventory-note">Hash 只读展示</span>
         </div>
