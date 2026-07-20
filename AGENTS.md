@@ -43,6 +43,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 For local development, `pnpm tauri dev` is the supported entry point. The desktop target requires the Windows MSVC build tools and WebView2 runtime.
 
+For a standalone raw executable, use `pnpm tauri:release`. Do not use plain `cargo build --release`: the Tauri CLI must set the production build context so the web assets are embedded instead of pointing the webview at the Vite development URL.
+
 ## Git scope
 
 - Keep each commit focused on one coherent feature.
