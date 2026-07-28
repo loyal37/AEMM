@@ -26,6 +26,7 @@ After completing an important feature, update `PROJECT_CONTEXT.md`, `ARCHITECTUR
 - File operations must canonicalize and validate their roots. Archive extraction must reject absolute paths, parent traversal, link escapes, and writes outside the staging directory.
 - Destructive operations must prove that the target is contained by an AEMM-owned root. Never delete a user-selected root itself.
 - Long-running filesystem, hashing, archive, and database work must not block the Tauri/UI thread.
+- Keep visible interface text at 12 CSS pixels or larger. Use the shared typography tokens and verify larger text does not introduce clipping or horizontal overflow at the supported 820×600 minimum window.
 - Keep public APIs stable. Refactors must remain behavior-compatible and stay within task scope.
 - Never execute third-party game loaders or mod binaries during analysis or tests.
 

@@ -25,6 +25,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - The shell has no CSS minimum-width lock. Toolbars wrap, settings collapse to one column, the sidebar compacts at 960 CSS pixels, and the supported Tauri minimum window is 820×600.
 - Direct-state and duplicate active/disabled folder tests are present. Current validation is 72 passing default Rust tests plus five explicitly ignored legacy copy-deployment regression fixtures pending removal in the schema-cleanup follow-up.
 - Standalone raw executables must be produced with `pnpm tauri:release`; this injects Tauri's production build context and embeds `dist` instead of compiling the Vite development URL into the webview.
+- Visible typography now follows a 12/13/14-pixel caption/secondary/body scale across every page; same-type conflicts affecting the same mod set are grouped into one collapsed summary with technical Hash, participant, and INI evidence expanded on demand.
 
 - Phase 1 foundation through Phase 10 audit/release hardening are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).

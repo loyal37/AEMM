@@ -6,6 +6,7 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 
 ### Product correction
 
+- Increased visible UI typography to a minimum of 12 px across Dashboard, Mods, details, import, Profiles, Settings, and dialogs; repeated conflict Hash cards with the same participants now render as one collapsed, progressively expandable summary.
 - Fixed standalone Windows builds opening the Vite development URL by requiring the Tauri production build pipeline through `pnpm tauri:release`.
 - Changed AEMM from a separate repository/game launcher model to direct management of the configured EFMI `Mods` directory.
 - Added `efmi.direct-folder.v1`: normal folders are enabled and `DISABLED_` folders are disabled; state changes use collision-checked atomic rename with filesystem rollback on database failure.

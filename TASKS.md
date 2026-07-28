@@ -12,6 +12,7 @@ Status: `[ ]` not started, `[~]` in progress, `[x]` completed.
 - [x] Remove game discovery/open/launch commands and all game-management/launch UI.
 - [x] Fix responsive overflow with wrapping controls, compact navigation, single-column settings, and an 820×600 minimum window.
 - [x] Add a reproducible standalone Tauri release command that embeds the frontend and does not depend on a running Vite server.
+- [x] Replace undersized 8–11 px interface text with shared readable typography tokens and group repeated conflict cards/evidence into collapsed, progressively expandable summaries.
 - [~] Remove deprecated game/config DTO fields and legacy `efmi.copy.v1` code in a versioned schema cleanup after portable migration compatibility has shipped.
 
 ## Phase 1 — Foundation

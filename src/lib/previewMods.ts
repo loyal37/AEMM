@@ -71,6 +71,7 @@ export function getPreviewConflictReport(): ConflictReport {
   const enabled = getPreviewMods().filter((item) => item.enabled);
   const first = enabled[0];
   const second = enabled[1];
+  const previewHashes = ["48e5c5f7", "0ba16985", "06c94dd5"];
   const participants = [first, second]
     .filter((item): item is ModListItem => Boolean(item))
     .map((item, index) => ({
@@ -93,18 +94,22 @@ export function getPreviewConflictReport(): ConflictReport {
     affectedMods: participants.length,
     conflicts:
       participants.length >= 2
-        ? [
-            {
-              id: "conflict-preview-texture",
+        ? previewHashes.map((hash) => ({
+              id: `conflict-preview-texture-${hash}`,
               analyzerId: "efmi.ini.v1",
               kind: "efmiTextureOverride",
               severity: "warning",
-              resourceKey: "texture-hash:48e5c5f7",
+              resourceKey: `texture-hash:${hash}`,
               summary: "多个已启用模组可能匹配同一 TextureOverride 资源 Hash。",
-              participants,
+              participants: participants.map((participant) => ({
+                ...participant,
+                evidence: participant.evidence.map((evidence) => ({
+                  ...evidence,
+                  detail: `hash=${hash}, match_index_count=120, handling=skip`,
+                })),
+              })),
               winningModId: null,
-            },
-          ]
+            }))
         : [],
     loadOrderVerified: false,
     loadOrderNote:
