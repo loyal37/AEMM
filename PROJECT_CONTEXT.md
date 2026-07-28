@@ -23,9 +23,10 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - AEMM-owned `config.json`, `mods.db`, rolling logs, and staging data are portable under `<software-directory>/data`. Legacy AppData config/database/logs are copied once when the portable files are absent; subsequent writes use only the portable paths.
 - The Settings, Dashboard, Sidebar, Mods, details, Profiles, and onboarding copy now describe direct EFMI Mods management and contain no game-launch UX.
 - The shell has no CSS minimum-width lock. Toolbars wrap, settings collapse to one column, the sidebar compacts at 960 CSS pixels, and the supported Tauri minimum window is 820×600.
-- Direct-state and duplicate active/disabled folder tests are present. Current validation is 72 passing default Rust tests plus five explicitly ignored legacy copy-deployment regression fixtures pending removal in the schema-cleanup follow-up.
+- Direct-state and duplicate active/disabled folder tests are present. Current validation is 73 passing default Rust tests plus five explicitly ignored legacy copy-deployment regression fixtures pending removal in the schema-cleanup follow-up.
 - Standalone raw executables must be produced with `pnpm tauri:release`; this injects Tauri's production build context and embeds `dist` instead of compiling the Vite development URL into the webview.
 - Visible typography now follows a 12/13/14-pixel caption/secondary/body scale across every page; same-type conflicts affecting the same mod set are grouped into one collapsed summary with technical Hash, participant, and INI evidence expanded on demand.
+- Mod details accept PNG/JPEG/WebP/GIF previews by click or native Windows drag-and-drop. AEMM validates the untrusted source, copies it under `<software-directory>/data/previews`, stores only a controlled local reference in SQLite, and leaves the author mod files unchanged.
 
 - Phase 1 foundation through Phase 10 audit/release hardening are implemented and validated locally on Windows 11.
 - The Phase 1 foundation was published to `loyal37/AEMM` on the `main` branch on 2026-07-16 (initial commit `3680f9f`).
@@ -72,7 +73,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 - TanStack Virtual row virtualization for both responsive card grids and compact lists, so only visible/overscan entries create DOM nodes for 1,000+ mod repositories.
 - A complete mod detail route with preview, effective metadata, original author metadata, local-only override/notes/tags editing, lifecycle warnings, installation/file statistics, and a virtualized file inventory.
 - Safe backend detail, preview, batch-favorite, and open-directory use cases. Commands accept only mod UUIDs; repository paths are resolved from SQLite through typed owned-root containment checks.
-- Preview files are capped at 2 MiB and accepted only after PNG/JPEG/WebP/GIF signature validation. SVG/HTML and arbitrary frontend file paths are never served by the desktop backend.
+- Preview files are capped at 16 MiB, 8,192 pixels per edge, and 40 million pixels, and are accepted only after PNG/JPEG/WebP/GIF decoding. SVG/HTML and arbitrary frontend file paths are never served by the desktop backend.
 - Dashboard installed/favorite counts and recent installs now use live mod database queries. Enabled/conflict statistics remain explicitly unavailable until their owning phases.
 - Browser-only deterministic preview fixtures for UI development; desktop mode always reads real SQLite records.
 - Visual and interaction checks at 1440×1000 and the 960×800 minimum window, including grid/list/detail rendering, search, selection, local editing, and horizontal-overflow checks.
@@ -152,7 +153,7 @@ Endfield Mod Manager (AEMM) is a maintainable Windows 10/11 desktop manager for 
 13. Phase 3 uses BLAKE3 for content identity and persists file modification timestamps as an incremental cache hint. Content fingerprints remain based on normalized path, size, and content hash so timestamp-only changes do not masquerade as mod updates.
 14. Every direct child directory of the repository is one installed mod. Archive/package root discovery remains an installer concern and is deliberately deferred to Phase 5.
 15. Phase 4 performs search/filter/sort in the webview over the compact `ModListItem` projection, while TanStack Virtual bounds rendered DOM. If online catalogs or repositories grow far beyond local 1,000-mod targets, query/pagination moves behind a backend port without changing card/detail components.
-16. Author-provided website values are displayed as untrusted text, not launched. Opening a folder and loading a preview are UUID-based backend operations with fresh repository containment validation.
+16. Author-provided website values are displayed as untrusted text, not launched. Opening a folder and loading a preview are UUID-based backend operations with fresh repository containment validation. User-selected local previews are imported through a separate UUID-scoped command into AEMM-owned storage and take precedence without replacing author metadata.
 17. Phase 5 commits accept only an operation UUID. The frontend cannot submit a destination path or modify a prepared plan; the backend reloads the owned journal, rescans the candidate, and rechecks duplicates immediately before commit.
 18. Archive entry names are never trusted as output paths. ZIP and folder content is written with `create_new`, 7z's helper destination argument is ignored, and RAR content is read under a per-file bound before writing to a validated AEMM path.
 19. Manifest-less imports use `local.<content-fingerprint-prefix>` as their internal logical ID so staging/wrapper directory names cannot make identity unstable.
@@ -200,7 +201,7 @@ These observations justify an `EfmiGameAdapter` and an EFMI-specific deployment/
 - No representative mod archives were present in the supplied EFMI folder. A public RabbitFX v2.2 package has since validated the real archive/root/deploy/revoke path, but a representative EFMI Tools-generated character model package with Meshes/Textures is still needed before finalizing resource-level conflict semantics.
 - Phase 3 does not infer EFMI deployment targets or loader priority from scanned files. File roles are descriptive only until real mod fixtures establish adapter-specific semantics.
 - Manual edits that create duplicate case-insensitive author IDs cause the scan transaction to fail with an actionable metadata error, preserving the previously consistent database state.
-- Preview images larger than 2 MiB or with unsupported signatures fall back to a generated placeholder. A managed thumbnail cache can be added later if real fixtures require large-source downscaling.
+- Preview images larger than 16 MiB, wider or taller than 8,192 pixels, above 40 million pixels, damaged, or outside PNG/JPEG/WebP/GIF fall back to the author preview or placeholder. A managed thumbnail cache can be added later if real fixtures require source downscaling.
 - Profile switching currently redeploys the full target set because EFMI deployment directories are keyed by mod UUID and ownership markers include the Profile ID. Safe shared-deployment transfer can be optimized later only with an explicit marker/database protocol and crash fixtures.
 
 - English localization currently covers the application shell and onboarding only. Feature pages remain Chinese-first and the selector labels English as Preview.

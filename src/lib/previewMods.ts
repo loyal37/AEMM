@@ -41,6 +41,7 @@ function baseMods(): ModListItem[] {
       description: "用于浏览器预览的模组数据。桌面模式会显示 SQLite 中的真实扫描结果。",
       category,
       previewPath: "preview.png",
+      hasCustomPreview: false,
       favorite: favoriteOverrides.get(id) ?? index % 5 === 0,
       enabled: isPreviewModEnabled(id),
       sizeBytes: 2_400_000 + index * 731_113,

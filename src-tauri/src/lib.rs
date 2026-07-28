@@ -37,6 +37,8 @@ pub fn run() {
             commands::mod_commands::uninstall_mods,
             commands::mod_commands::set_mods_enabled,
             commands::mod_commands::get_mod_preview,
+            commands::mod_commands::set_mod_preview,
+            commands::mod_commands::clear_mod_preview,
             commands::mod_commands::open_mod_directory,
             commands::mod_commands::update_local_mod_metadata,
             commands::conflict_commands::get_active_conflict_report,

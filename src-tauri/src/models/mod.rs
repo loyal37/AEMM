@@ -31,8 +31,8 @@ pub use mod_install::{
 };
 pub use mod_scan::{
     ModDeploymentMutationResult, ModDetails, ModFileDetails, ModListItem, ModMutationResult,
-    ModPreview, ModRemovalResult, ModScanResult, RemoveMods, SetModFavorite, SetModsEnabled,
-    UpdateLocalModMetadata,
+    ModPreview, ModRemovalResult, ModScanResult, RemoveMods, SetModFavorite, SetModPreview,
+    SetModsEnabled, UpdateLocalModMetadata,
 };
 pub use profile::{
     CopyProfile, CreateProfile, Profile, ProfileMod, ProfileOperation, ProfileSwitchResult,

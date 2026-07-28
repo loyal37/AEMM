@@ -33,7 +33,8 @@ pub struct ModSyncOutcome {
 #[derive(Debug, Clone)]
 pub struct ModContentReference {
     pub repository_path: PathBuf,
-    pub preview_path: Option<PathBuf>,
+    pub author_preview_path: Option<PathBuf>,
+    pub local_preview_file_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -416,7 +417,7 @@ impl ModStore {
                 a.author, a.version,
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
-                a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                a.preview_path, l.preview_file_name, COALESCE(l.favorite, 0) AS favorite,
                 EXISTS(
                     SELECT 1 FROM app_state s
                     JOIN profile_mods pm
@@ -492,7 +493,7 @@ impl ModStore {
                 a.author, a.version,
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
-                a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                a.preview_path, l.preview_file_name, COALESCE(l.favorite, 0) AS favorite,
                 EXISTS(
                     SELECT 1 FROM app_state s
                     JOIN profile_mods pm
@@ -526,7 +527,7 @@ impl ModStore {
                 a.author, a.version,
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
-                a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                a.preview_path, l.preview_file_name, COALESCE(l.favorite, 0) AS favorite,
                 EXISTS(
                     SELECT 1 FROM app_state s
                     JOIN profile_mods pm
@@ -594,9 +595,10 @@ impl ModStore {
 
     pub async fn content_reference(&self, mod_id: Uuid) -> Result<ModContentReference, AppError> {
         let row = sqlx::query(
-            "SELECT m.repository_path, a.preview_path
+            "SELECT m.repository_path, a.preview_path, l.preview_file_name
              FROM mods m
              JOIN mod_author_metadata a ON a.mod_id = m.id
+             JOIN mod_local_metadata l ON l.mod_id = m.id
              WHERE m.id = ?",
         )
         .bind(mod_id.to_string())
@@ -605,10 +607,67 @@ impl ModStore {
         .ok_or_else(|| AppError::NotAvailable("模组记录不存在。".to_owned()))?;
         Ok(ModContentReference {
             repository_path: PathBuf::from(row.try_get::<String, _>("repository_path")?),
-            preview_path: row
+            author_preview_path: row
                 .try_get::<Option<String>, _>("preview_path")?
                 .map(PathBuf::from),
+            local_preview_file_name: row.try_get("preview_file_name")?,
         })
+    }
+
+    pub async fn replace_local_preview(
+        &self,
+        mod_id: Uuid,
+        file_name: Option<&str>,
+    ) -> Result<Option<String>, AppError> {
+        let now = unix_timestamp_seconds()?;
+        let mut transaction = self.pool.begin().await?;
+        let previous: Option<Option<String>> =
+            sqlx::query_scalar("SELECT preview_file_name FROM mod_local_metadata WHERE mod_id = ?")
+                .bind(mod_id.to_string())
+                .fetch_optional(&mut *transaction)
+                .await?;
+        let previous = previous.ok_or_else(|| {
+            AppError::NotAvailable("要修改预览图的模组不存在，请先重新扫描。".to_owned())
+        })?;
+        let updated = sqlx::query(
+            "UPDATE mod_local_metadata
+             SET preview_file_name = ?, updated_at = ?
+             WHERE mod_id = ?",
+        )
+        .bind(file_name)
+        .bind(now)
+        .bind(mod_id.to_string())
+        .execute(&mut *transaction)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(AppError::DataIntegrity(
+                "本地预览图引用更新数量不一致。".to_owned(),
+            ));
+        }
+        transaction.commit().await?;
+        Ok(previous)
+    }
+
+    pub async fn local_preview_files(
+        &self,
+        mod_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, String)>, AppError> {
+        let mut previews = Vec::new();
+        for mod_id in mod_ids {
+            let file_name: Option<String> = sqlx::query_scalar(
+                "SELECT preview_file_name
+                 FROM mod_local_metadata
+                 WHERE mod_id = ? AND preview_file_name IS NOT NULL",
+            )
+            .bind(mod_id.to_string())
+            .fetch_optional(&self.pool)
+            .await?
+            .flatten();
+            if let Some(file_name) = file_name {
+                previews.push((*mod_id, file_name));
+            }
+        }
+        Ok(previews)
     }
 
     pub async fn prepare_removals(
@@ -860,7 +919,7 @@ impl ModStore {
                 a.author, a.version,
                 COALESCE(l.description_override, a.description) AS description,
                 COALESCE(l.category_override, a.category) AS category,
-                a.preview_path, COALESCE(l.favorite, 0) AS favorite,
+                a.preview_path, l.preview_file_name, COALESCE(l.favorite, 0) AS favorite,
                 EXISTS(
                     SELECT 1 FROM app_state s
                     JOIN profile_mods pm
@@ -899,6 +958,9 @@ fn row_to_list_item(row: &sqlx::sqlite::SqliteRow) -> Result<ModListItem, AppErr
         preview_path: row
             .try_get::<Option<String>, _>("preview_path")?
             .map(PathBuf::from),
+        has_custom_preview: row
+            .try_get::<Option<String>, _>("preview_file_name")?
+            .is_some(),
         favorite: row.try_get::<i64, _>("favorite")? != 0,
         enabled: row.try_get::<i64, _>("enabled")? != 0,
         size_bytes: non_negative_u64(row.try_get("size_bytes")?, "size_bytes")?,

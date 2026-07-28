@@ -115,6 +115,7 @@ export interface ModListItem {
   description: string | null;
   category: string | null;
   previewPath: string | null;
+  hasCustomPreview: boolean;
   favorite: boolean;
   enabled: boolean;
   sizeBytes: number;

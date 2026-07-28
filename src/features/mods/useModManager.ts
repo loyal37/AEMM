@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cancelModImport,
+  clearModPreview,
   commitModImport,
   getModDetails,
   getModPreview,
@@ -9,11 +10,17 @@ import {
   prepareModImport,
   scanModRepository,
   setModFavorite,
+  setModPreview,
   setModsEnabled,
   uninstallMods,
   updateLocalModMetadata,
 } from "../../lib/tauri";
-import type { LocalModMetadata, ModDetails, ModListItem } from "../../types/app";
+import type {
+  LocalModMetadata,
+  ModDetails,
+  ModListItem,
+  ModPreview,
+} from "../../types/app";
 import { CONFLICT_REPORT_KEY } from "../conflicts/useConflictReport";
 
 export const MOD_LIST_KEY = ["mods", "list"] as const;
@@ -74,6 +81,26 @@ export function useModPreview(modId: string, enabled: boolean) {
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 30_000,
+  });
+}
+
+export function useSetModPreview(modId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sourcePath: string) => setModPreview(modId, sourcePath),
+    onSuccess: (preview) => {
+      updatePreviewCaches(queryClient, modId, preview, true);
+    },
+  });
+}
+
+export function useClearModPreview(modId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => clearModPreview(modId),
+    onSuccess: (preview) => {
+      updatePreviewCaches(queryClient, modId, preview, false);
+    },
   });
 }
 
@@ -163,4 +190,26 @@ export function useUpdateLocalModMetadata(modId: string) {
 
 export function useOpenModDirectory() {
   return useMutation({ mutationFn: openModDirectory });
+}
+
+function updatePreviewCaches(
+  queryClient: ReturnType<typeof useQueryClient>,
+  modId: string,
+  preview: ModPreview | null,
+  hasCustomPreview: boolean,
+) {
+  queryClient.setQueryData(["mods", "preview", modId], preview);
+  queryClient.setQueryData<ModListItem[]>(MOD_LIST_KEY, (items) =>
+    items?.map((item) =>
+      item.id === modId ? { ...item, hasCustomPreview } : item,
+    ),
+  );
+  queryClient.setQueryData<ModDetails>(modDetailsKey(modId), (details) =>
+    details
+      ? {
+          ...details,
+          item: { ...details.item, hasCustomPreview },
+        }
+      : details,
+  );
 }

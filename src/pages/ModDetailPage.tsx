@@ -28,7 +28,7 @@ import {
   formatTimestamp,
   lifecycleLabel,
 } from "../features/mods/modQuery";
-import { ModPreviewImage } from "../features/mods/ModPreviewImage";
+import { ModPreviewEditor } from "../features/mods/ModPreviewEditor";
 import {
   useModDetails,
   useOpenModDirectory,
@@ -96,11 +96,12 @@ export function ModDetailPage() {
       </Link>
 
       <section className="mod-detail-hero">
-        <ModPreviewImage
+        <ModPreviewEditor
           modId={item.id}
           name={item.name}
-          hasPreview={Boolean(item.previewPath)}
-          variant="detail"
+          authorPreviewPath={item.previewPath}
+          hasCustomPreview={item.hasCustomPreview}
+          desktopReady={desktopReady}
         />
         <div className="mod-detail-hero__content">
           <div className="mod-detail-hero__topline">

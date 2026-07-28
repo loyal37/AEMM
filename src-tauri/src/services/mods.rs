@@ -1,12 +1,14 @@
 use std::{
     collections::HashSet,
     fs,
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use image::{ImageFormat, ImageReader};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -14,7 +16,7 @@ use crate::{
         ExistingModIdentity, FileSystemModScanner, InstallProgressReporter, ModScanner,
         PendingRemovalRecovery, REMOVAL_TOMBSTONE_PREFIX, RepositoryInitializationPolicy,
         RepositoryRelativePath, RepositoryRemoval, RepositoryRoot, SafeModInstaller,
-        StagingInitializationPolicy, StagingRoot, emit,
+        StagingInitializationPolicy, StagingRoot, emit, path_is_link_or_reparse_point,
     },
     database::{Database, ModStore, StoredModRemoval},
     errors::AppError,
@@ -35,17 +37,21 @@ const MAX_TAG_LENGTH: usize = 64;
 const MAX_REPORTED_ISSUES: usize = 200;
 const MAX_FAVORITE_BATCH: usize = 10_000;
 const MAX_REMOVAL_BATCH: usize = 256;
-const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_PREVIEW_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_PREVIEW_DIMENSION: u32 = 8_192;
+const MAX_PREVIEW_PIXELS: u64 = 40_000_000;
 
 #[derive(Debug)]
 pub struct ModService {
     settings: SettingsService,
     default_repository_path: PathBuf,
     default_staging_path: PathBuf,
+    preview_directory: PathBuf,
     scanner: FileSystemModScanner,
     store: ModStore,
     scan_lock: Arc<Mutex<()>>,
     install_lock: Arc<Mutex<()>>,
+    preview_lock: Arc<Mutex<()>>,
     deployment_lock: Arc<Mutex<()>>,
 }
 
@@ -55,16 +61,19 @@ impl ModService {
         database: &Database,
         default_repository_path: PathBuf,
         default_staging_path: PathBuf,
+        preview_directory: PathBuf,
         deployment_lock: Arc<Mutex<()>>,
     ) -> Self {
         Self {
             settings,
             default_repository_path,
             default_staging_path,
+            preview_directory,
             scanner: FileSystemModScanner::new(),
             store: ModStore::new(database.pool().clone()),
             scan_lock: Arc::new(Mutex::new(())),
             install_lock: Arc::new(Mutex::new(())),
+            preview_lock: Arc::new(Mutex::new(())),
             deployment_lock,
         }
     }
@@ -276,7 +285,9 @@ impl ModService {
         let _deployment_guard = self.deployment_lock.lock().await;
         let _install_guard = self.install_lock.lock().await;
         let _scan_guard = self.scan_lock.lock().await;
+        let _preview_guard = self.preview_lock.lock().await;
         let root = self.repository_root().await?;
+        let local_previews = self.store.local_preview_files(&mod_ids).await?;
         let requests = mod_ids
             .iter()
             .map(|mod_id| {
@@ -321,6 +332,19 @@ impl ModService {
         }
 
         let mut warnings = Vec::new();
+        for (mod_id, file_name) in local_previews {
+            let preview_root = self.preview_directory.clone();
+            if let Err(error) = tokio::task::spawn_blocking(move || {
+                remove_managed_preview(&preview_root, mod_id, &file_name)
+            })
+            .await?
+            {
+                tracing::warn!(%mod_id, error = %error, "mod was uninstalled but its local preview cleanup was skipped");
+                warnings.push(format!(
+                    "模组 {mod_id} 已卸载，但本地预览图未能清理；详情请查看日志。"
+                ));
+            }
+        }
         for removal in quarantined {
             let cleanup_root = root.clone();
             let cleanup_removal = removal.clone();
@@ -537,7 +561,24 @@ impl ModService {
 
     pub async fn preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {
         let reference = self.store.content_reference(mod_id).await?;
-        let Some(preview_path) = reference.preview_path else {
+        if let Some(file_name) = reference.local_preview_file_name {
+            let preview_root = self.preview_directory.clone();
+            let local_preview = tokio::task::spawn_blocking(move || {
+                read_managed_preview(&preview_root, mod_id, &file_name)
+            })
+            .await?;
+            match local_preview {
+                Ok(Some(preview)) => return Ok(Some(preview)),
+                Ok(None) => {
+                    tracing::warn!(%mod_id, "managed mod preview is unavailable; falling back to author preview");
+                }
+                Err(error) => {
+                    tracing::warn!(%mod_id, error = %error, "managed mod preview could not be read; falling back to author preview");
+                }
+            }
+        }
+
+        let Some(preview_path) = reference.author_preview_path else {
             return Ok(None);
         };
         let root = self.repository_root().await?;
@@ -548,6 +589,70 @@ impl ModService {
             read_preview(&preview_path)
         })
         .await?
+    }
+
+    pub async fn set_preview(
+        &self,
+        mod_id: uuid::Uuid,
+        source_path: PathBuf,
+    ) -> Result<ModPreview, AppError> {
+        let _preview_guard = self.preview_lock.lock().await;
+        self.store.content_reference(mod_id).await?;
+        let preview_root = self.preview_directory.clone();
+        let written = tokio::task::spawn_blocking(move || {
+            import_managed_preview(&preview_root, mod_id, &source_path)
+        })
+        .await??;
+        let previous = match self
+            .store
+            .replace_local_preview(mod_id, Some(&written.file_name))
+            .await
+        {
+            Ok(previous) => previous,
+            Err(error) => {
+                let cleanup_root = self.preview_directory.clone();
+                let cleanup_name = written.file_name.clone();
+                if let Err(cleanup_error) = tokio::task::spawn_blocking(move || {
+                    remove_managed_preview(&cleanup_root, mod_id, &cleanup_name)
+                })
+                .await?
+                {
+                    tracing::error!(%mod_id, error = %cleanup_error, "failed to clean an uncommitted local preview");
+                }
+                return Err(error);
+            }
+        };
+        if let Some(previous) = previous {
+            let cleanup_root = self.preview_directory.clone();
+            if let Err(error) = tokio::task::spawn_blocking(move || {
+                remove_managed_preview(&cleanup_root, mod_id, &previous)
+            })
+            .await?
+            {
+                tracing::warn!(%mod_id, error = %error, "replaced local preview could not be cleaned");
+            }
+        }
+        tracing::info!(%mod_id, file_name = written.file_name, "local mod preview updated");
+        Ok(written.preview)
+    }
+
+    pub async fn clear_preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {
+        {
+            let _preview_guard = self.preview_lock.lock().await;
+            let previous = self.store.replace_local_preview(mod_id, None).await?;
+            if let Some(previous) = previous {
+                let preview_root = self.preview_directory.clone();
+                if let Err(error) = tokio::task::spawn_blocking(move || {
+                    remove_managed_preview(&preview_root, mod_id, &previous)
+                })
+                .await?
+                {
+                    tracing::warn!(%mod_id, error = %error, "cleared local preview could not be removed");
+                }
+            }
+            tracing::info!(%mod_id, "local mod preview cleared");
+        }
+        self.preview(mod_id).await
     }
 
     pub async fn update_local_metadata(
@@ -673,37 +778,246 @@ fn restore_removals(root: &RepositoryRoot, removals: &[RepositoryRemoval]) -> Re
     Ok(())
 }
 
+#[derive(Debug)]
+struct WrittenManagedPreview {
+    file_name: String,
+    preview: ModPreview,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreviewImageInfo {
+    media_type: &'static str,
+    extension: &'static str,
+}
+
 fn read_preview(path: &Path) -> Result<Option<ModPreview>, AppError> {
     let metadata = fs::metadata(path).map_err(|source| AppError::file_system(path, source))?;
-    if !metadata.is_file() || metadata.len() > MAX_PREVIEW_BYTES {
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_PREVIEW_BYTES {
         tracing::warn!(preview = %path.display(), size = metadata.len(), "mod preview skipped because it is not a regular file or exceeds the size limit");
         return Ok(None);
     }
-    let bytes = fs::read(path).map_err(|source| AppError::file_system(path, source))?;
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_PREVIEW_BYTES {
-        tracing::warn!(preview = %path.display(), "mod preview grew beyond the size limit while being read");
-        return Ok(None);
-    }
-    let Some(media_type) = image_media_type(&bytes) else {
-        tracing::warn!(preview = %path.display(), "mod preview skipped because its file signature is unsupported");
-        return Ok(None);
+    let bytes = read_bounded_preview(path)?;
+    let info = match inspect_preview_bytes(&bytes) {
+        Ok(info) => info,
+        Err(error) => {
+            tracing::warn!(preview = %path.display(), error = %error, "mod preview skipped because its image data is invalid");
+            return Ok(None);
+        }
     };
-    Ok(Some(ModPreview {
-        data_url: format!("data:{media_type};base64,{}", STANDARD.encode(bytes)),
-    }))
+    Ok(Some(preview_data_url(&bytes, info.media_type)))
 }
 
-fn image_media_type(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some("image/png")
-    } else if bytes.starts_with(b"\xff\xd8\xff") {
-        Some("image/jpeg")
-    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
-        Some("image/webp")
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Some("image/gif")
-    } else {
-        None
+fn import_managed_preview(
+    preview_root: &Path,
+    mod_id: uuid::Uuid,
+    source_path: &Path,
+) -> Result<WrittenManagedPreview, AppError> {
+    validate_preview_root(preview_root)?;
+    if !source_path.is_absolute() {
+        return Err(AppError::ModPreview(
+            "拖入的图片必须是本机绝对路径。".to_owned(),
+        ));
+    }
+    let source_metadata =
+        fs::metadata(source_path).map_err(|source| AppError::file_system(source_path, source))?;
+    if !source_metadata.is_file() || path_is_link_or_reparse_point(source_path)? {
+        return Err(AppError::ModPreview(
+            "请选择普通图片文件，不能使用目录、链接或重解析点。".to_owned(),
+        ));
+    }
+    if source_metadata.len() == 0 || source_metadata.len() > MAX_PREVIEW_BYTES {
+        return Err(AppError::ModPreview(format!(
+            "预览图必须大于 0 字节且不能超过 {} MiB。",
+            MAX_PREVIEW_BYTES / 1024 / 1024
+        )));
+    }
+
+    let bytes = read_bounded_preview(source_path)?;
+    let info = inspect_preview_bytes(&bytes)?;
+    let file_name = format!("{mod_id}-{}.{}", uuid::Uuid::new_v4(), info.extension);
+    let destination = managed_preview_path(preview_root, mod_id, &file_name)?;
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)
+        .map_err(|source| AppError::file_system(&destination, source))?;
+    if let Err(source) = output.write_all(&bytes).and_then(|()| output.sync_all()) {
+        let _ = fs::remove_file(&destination);
+        return Err(AppError::file_system(&destination, source));
+    }
+
+    Ok(WrittenManagedPreview {
+        file_name,
+        preview: preview_data_url(&bytes, info.media_type),
+    })
+}
+
+fn read_managed_preview(
+    preview_root: &Path,
+    mod_id: uuid::Uuid,
+    file_name: &str,
+) -> Result<Option<ModPreview>, AppError> {
+    validate_preview_root(preview_root)?;
+    let path = managed_preview_path(preview_root, mod_id, file_name)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    if path_is_link_or_reparse_point(&path)? {
+        return Err(AppError::UnsafePath(
+            "本地预览图不能是链接或重解析点。".to_owned(),
+        ));
+    }
+    read_preview(&path)
+}
+
+fn remove_managed_preview(
+    preview_root: &Path,
+    mod_id: uuid::Uuid,
+    file_name: &str,
+) -> Result<(), AppError> {
+    validate_preview_root(preview_root)?;
+    let path = managed_preview_path(preview_root, mod_id, file_name)?;
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) => {
+            if !metadata.is_file() || path_is_link_or_reparse_point(&path)? {
+                return Err(AppError::UnsafePath(
+                    "拒绝删除不是普通文件的本地预览图。".to_owned(),
+                ));
+            }
+            fs::remove_file(&path).map_err(|source| AppError::file_system(&path, source))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(AppError::file_system(&path, source)),
+    }
+}
+
+fn validate_preview_root(preview_root: &Path) -> Result<(), AppError> {
+    if !preview_root.is_absolute() {
+        return Err(AppError::UnsafePath(
+            "AEMM 本地预览目录必须是绝对路径。".to_owned(),
+        ));
+    }
+    fs::create_dir_all(preview_root)
+        .map_err(|source| AppError::file_system(preview_root, source))?;
+    let parent = preview_root
+        .parent()
+        .ok_or_else(|| AppError::UnsafePath("AEMM 本地预览目录缺少受控父目录。".to_owned()))?;
+    let parent_metadata =
+        fs::metadata(parent).map_err(|source| AppError::file_system(parent, source))?;
+    if !parent_metadata.is_dir() || path_is_link_or_reparse_point(parent)? {
+        return Err(AppError::UnsafePath(
+            "AEMM 数据目录无效或已被替换为重解析点。".to_owned(),
+        ));
+    }
+    let metadata =
+        fs::metadata(preview_root).map_err(|source| AppError::file_system(preview_root, source))?;
+    if !metadata.is_dir() || path_is_link_or_reparse_point(preview_root)? {
+        return Err(AppError::UnsafePath(
+            "AEMM 本地预览目录无效或已被替换为重解析点。".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn managed_preview_path(
+    preview_root: &Path,
+    mod_id: uuid::Uuid,
+    file_name: &str,
+) -> Result<PathBuf, AppError> {
+    if file_name.is_empty()
+        || file_name.len() > 128
+        || !file_name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '.'))
+    {
+        return Err(AppError::DataIntegrity(
+            "本地预览图文件名包含不允许的内容。".to_owned(),
+        ));
+    }
+    let (stem, extension) = file_name
+        .rsplit_once('.')
+        .ok_or_else(|| AppError::DataIntegrity("本地预览图文件名缺少扩展名。".to_owned()))?;
+    if !matches!(extension, "png" | "jpg" | "webp" | "gif") {
+        return Err(AppError::DataIntegrity(
+            "本地预览图文件扩展名不受支持。".to_owned(),
+        ));
+    }
+    let token = stem
+        .strip_prefix(&format!("{mod_id}-"))
+        .ok_or_else(|| AppError::DataIntegrity("本地预览图不属于当前模组。".to_owned()))?;
+    uuid::Uuid::parse_str(token)
+        .map_err(|_| AppError::DataIntegrity("本地预览图标识无效。".to_owned()))?;
+    Ok(preview_root.join(file_name))
+}
+
+fn read_bounded_preview(path: &Path) -> Result<Vec<u8>, AppError> {
+    let file = fs::File::open(path).map_err(|source| AppError::file_system(path, source))?;
+    let limit = MAX_PREVIEW_BYTES
+        .checked_add(1)
+        .ok_or_else(|| AppError::DataIntegrity("预览图读取上限溢出。".to_owned()))?;
+    let mut bytes = Vec::new();
+    file.take(limit)
+        .read_to_end(&mut bytes)
+        .map_err(|source| AppError::file_system(path, source))?;
+    let byte_count = u64::try_from(bytes.len())
+        .map_err(|_| AppError::ModPreview("预览图大小超出支持范围。".to_owned()))?;
+    if byte_count > MAX_PREVIEW_BYTES {
+        return Err(AppError::ModPreview(format!(
+            "预览图读取过程中超过 {} MiB 上限。",
+            MAX_PREVIEW_BYTES / 1024 / 1024
+        )));
+    }
+    Ok(bytes)
+}
+
+fn inspect_preview_bytes(bytes: &[u8]) -> Result<PreviewImageInfo, AppError> {
+    let format = image::guess_format(bytes)
+        .map_err(|_| AppError::ModPreview("仅支持 PNG、JPG、WebP 或 GIF 图片。".to_owned()))?;
+    let info = match format {
+        ImageFormat::Png => PreviewImageInfo {
+            media_type: "image/png",
+            extension: "png",
+        },
+        ImageFormat::Jpeg => PreviewImageInfo {
+            media_type: "image/jpeg",
+            extension: "jpg",
+        },
+        ImageFormat::WebP => PreviewImageInfo {
+            media_type: "image/webp",
+            extension: "webp",
+        },
+        ImageFormat::Gif => PreviewImageInfo {
+            media_type: "image/gif",
+            extension: "gif",
+        },
+        _ => {
+            return Err(AppError::ModPreview(
+                "仅支持 PNG、JPG、WebP 或 GIF 图片。".to_owned(),
+            ));
+        }
+    };
+    let (width, height) = ImageReader::with_format(Cursor::new(bytes), format)
+        .into_dimensions()
+        .map_err(|_| AppError::ModPreview("图片内容损坏或无法读取尺寸。".to_owned()))?;
+    let pixels = u64::from(width)
+        .checked_mul(u64::from(height))
+        .ok_or_else(|| AppError::ModPreview("图片像素数量溢出。".to_owned()))?;
+    if width == 0
+        || height == 0
+        || width > MAX_PREVIEW_DIMENSION
+        || height > MAX_PREVIEW_DIMENSION
+        || pixels > MAX_PREVIEW_PIXELS
+    {
+        return Err(AppError::ModPreview(format!(
+            "图片尺寸为 {width}×{height}；宽高不能超过 {MAX_PREVIEW_DIMENSION}，总像素不能超过 {MAX_PREVIEW_PIXELS}。"
+        )));
+    }
+    Ok(info)
+}
+
+fn preview_data_url(bytes: &[u8], media_type: &str) -> ModPreview {
+    ModPreview {
+        data_url: format!("data:{media_type};base64,{}", STANDARD.encode(bytes)),
     }
 }
 
@@ -778,6 +1092,7 @@ fn normalized_path_key(path: &Path) -> String {
 mod tests {
     use std::{fs, path::Path, sync::Arc};
 
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use tokio::sync::Mutex;
 
     use crate::{
@@ -786,9 +1101,11 @@ mod tests {
         models::{LocalModMetadata, StorageSettings},
         services::{
             AppPaths, SettingsService,
-            mods::{ModService, image_media_type, validate_local_metadata},
+            mods::{ModService, inspect_preview_bytes, validate_local_metadata},
         },
     };
+
+    const ONE_PIXEL_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
     async fn removal_fixture(
         root: &Path,
@@ -812,6 +1129,7 @@ mod tests {
             &database,
             paths.repository_directory.clone(),
             paths.staging_directory.clone(),
+            paths.preview_directory.clone(),
             Arc::new(Mutex::new(())),
         );
         service.scan_repository().await?;
@@ -840,15 +1158,35 @@ mod tests {
     }
 
     #[test]
-    fn accepts_only_supported_preview_signatures() {
-        assert_eq!(
-            image_media_type(b"\x89PNG\r\n\x1a\nrest"),
-            Some("image/png")
-        );
-        assert_eq!(image_media_type(b"\xff\xd8\xffrest"), Some("image/jpeg"));
-        assert_eq!(image_media_type(b"RIFF0000WEBPrest"), Some("image/webp"));
-        assert_eq!(image_media_type(b"GIF89arest"), Some("image/gif"));
-        assert_eq!(image_media_type(b"<svg onload='bad'>"), None);
+    fn accepts_only_supported_decodable_preview_images() -> Result<(), Box<dyn std::error::Error>> {
+        let png = STANDARD.decode(ONE_PIXEL_PNG)?;
+        let info = inspect_preview_bytes(&png)?;
+        assert_eq!(info.media_type, "image/png");
+        assert_eq!(info.extension, "png");
+        assert!(inspect_preview_bytes(b"<svg onload='bad'>").is_err());
+        assert!(inspect_preview_bytes(b"\x89PNG\r\n\x1a\nbroken").is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stores_and_clears_a_managed_local_preview() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let (service, _database, paths, mod_id) = removal_fixture(directory.path()).await?;
+        let source = directory.path().join("selected-preview.png");
+        fs::write(&source, STANDARD.decode(ONE_PIXEL_PNG)?)?;
+
+        let preview = service.set_preview(mod_id, source).await?;
+
+        assert!(preview.data_url.starts_with("data:image/png;base64,"));
+        assert!(service.details(mod_id).await?.item.has_custom_preview);
+        assert_eq!(fs::read_dir(&paths.preview_directory)?.count(), 1);
+
+        let fallback = service.clear_preview(mod_id).await?;
+
+        assert!(fallback.is_none());
+        assert!(!service.details(mod_id).await?.item.has_custom_preview);
+        assert_eq!(fs::read_dir(&paths.preview_directory)?.count(), 0);
+        Ok(())
     }
 
     #[tokio::test]
@@ -985,6 +1323,7 @@ mod tests {
             &database,
             paths.repository_directory.clone(),
             paths.staging_directory.clone(),
+            paths.preview_directory.clone(),
             Arc::new(Mutex::new(())),
         );
         let requested = StorageSettings {

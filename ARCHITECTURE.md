@@ -33,6 +33,7 @@ Manager-owned data is portable:
 ├─ config.json
 ├─ mods.db
 ├─ logs/
+├─ previews/
 └─ staging/
 ```
 
@@ -181,7 +182,22 @@ flowchart LR
   Detail --> SafeIO["Contained preview / open directory"]
 ```
 
-The browser-preview adapter supplies deterministic fixtures only when Tauri is absent. It exercises UI behavior but cannot mutate desktop files. Desktop commands never accept a repository or preview path from the webview.
+The browser-preview adapter supplies deterministic fixtures only when Tauri is absent. It exercises UI behavior but cannot mutate desktop files. Desktop preview-read and directory-open commands accept only a mod UUID; the dedicated local-preview import command is the sole narrow exception that accepts an untrusted source image path.
+
+Local preview replacement is a separate AEMM-owned workflow:
+
+```mermaid
+flowchart LR
+  Drop["Windows drag/drop or image picker"] --> Command["UUID + untrusted source path"]
+  Command --> Validate["Regular non-reparse file; format, size and dimensions"]
+  Validate --> Copy["create_new copy under data/previews"]
+  Copy --> DB["SQLite local preview reference"]
+  DB --> Read["UUID-scoped preview query"]
+  DB -. "failure" .-> Rollback["Remove uncommitted copy"]
+  Read --> Fallback["Local preview → author preview → placeholder"]
+```
+
+The managed filename contains the mod UUID plus a fresh operation UUID and never accepts separators. Replacing or clearing commits the SQLite reference before best-effort cleanup of the old managed file; uninstall captures and removes the same controlled reference after its database commit. The author `preview` field and original image remain untouched.
 
 ### Deployment
 
@@ -296,7 +312,7 @@ Schema migrations are embedded and applied at startup. SQLite foreign keys and W
 
 Migration `0002_mod_scanning.sql` adds file modification timestamps for incremental Hash reuse, local metadata tags, and lookup/uniqueness indexes. `ModStore::synchronize` uses one transaction: it preserves stable AEMM UUIDs and local overrides, updates author/file snapshots, and marks vanished repository entries broken instead of deleting user data.
 
-Migration `0003_deployment_state.sql` adds the authoritative active Profile pointer and deployment/profile indexes. Migration `0004_mod_removal_state.sql` records recoverable uninstall intent. On every startup, migrations are followed by bounded SQLite `quick_check(1)` and `foreign_key_check`; corruption is surfaced before services perform filesystem reconciliation.
+Migration `0003_deployment_state.sql` adds the authoritative active Profile pointer and deployment/profile indexes. Migration `0004_mod_removal_state.sql` records recoverable uninstall intent. Migration `0005_local_mod_preview.sql` stores only the controlled AEMM preview filename in local metadata. On every startup, migrations are followed by bounded SQLite `quick_check(1)` and `foreign_key_check`; corruption is surfaced before services perform filesystem reconciliation.
 
 ## Uninstall workflow
 
@@ -372,7 +388,8 @@ Logging uses daily rolling files plus debug console output. The non-blocking wri
 - Tauri capabilities and CSP remain least-privilege.
 - Frontend directory selection has only `dialog:allow-open`; selected paths are still treated as untrusted and must pass backend adapter validation before persistence or use.
 - Open-directory and launch commands never accept arbitrary executable paths. They resolve saved settings through `GameService`, canonicalize again immediately before use, and launch without a command shell.
-- Mod preview/open-directory commands accept only a mod UUID. Preview reads are limited to 2 MiB, reject unsupported signatures including SVG/HTML, and traverse every repository component while rejecting links/reparse points.
+- Mod preview/open-directory commands accept only a mod UUID. Author preview reads traverse every repository component while rejecting links/reparse points; local preview writes accept a source path only from the dedicated picker/drop workflow, treat it as untrusted read-only input, and write only `create_new` files beneath the fixed AEMM-owned preview directory.
+- Preview validation accepts only decodable PNG/JPEG/WebP/GIF files up to 16 MiB, 8,192 pixels per edge, and 40 million total pixels. Managed deletion requires a separator-free filename containing the owning mod UUID and a generated operation UUID, and removes only a regular file.
 - Uninstall accepts only mod UUIDs, refuses active enabled rows, quarantines direct-child repository roots before database deletion, and removes only a marker-verified inventory. Unexpected files or links stop cleanup and preserve evidence.
 - Storage paths change only through a dedicated locked service that requires empty/owned roots and rejects overlaps and pending operations; generic preference updates cannot mutate paths.
 - Production CSP excludes Vite/WebSocket development origins, and Tauri freezes JavaScript prototypes.

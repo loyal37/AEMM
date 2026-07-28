@@ -8,7 +8,7 @@ use crate::{
         ModDeploymentMutationResult, ModDetails, ModImportOperation, ModImportPlan,
         ModInstallProgress, ModInstallResult, ModListItem, ModMutationResult, ModPreview,
         ModRemovalResult, ModScanResult, PrepareModImport, RemoveMods, SetModFavorite,
-        SetModsEnabled, UpdateLocalModMetadata,
+        SetModPreview, SetModsEnabled, UpdateLocalModMetadata,
     },
     services::AppServices,
 };
@@ -127,6 +127,28 @@ pub async fn get_mod_preview(
 ) -> CommandResult<Option<ModPreview>> {
     services
         .mod_preview(mod_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn set_mod_preview(
+    request: SetModPreview,
+    services: State<'_, AppServices>,
+) -> CommandResult<ModPreview> {
+    services
+        .set_mod_preview(request.mod_id, request.source_path)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn clear_mod_preview(
+    mod_id: uuid::Uuid,
+    services: State<'_, AppServices>,
+) -> CommandResult<Option<ModPreview>> {
+    services
+        .clear_mod_preview(mod_id)
         .await
         .map_err(CommandError::from)
 }

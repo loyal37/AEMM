@@ -94,9 +94,16 @@ mod tests {
         )
         .fetch_one(database.pool())
         .await?;
+        let preview_file_name_columns: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('mod_local_metadata')
+             WHERE name = 'preview_file_name'",
+        )
+        .fetch_one(database.pool())
+        .await?;
 
         assert_eq!(modified_at_columns, 1);
         assert_eq!(tags_json_columns, 1);
+        assert_eq!(preview_file_name_columns, 1);
 
         let active_profile_id: String =
             sqlx::query_scalar("SELECT active_profile_id FROM app_state WHERE singleton = 1")

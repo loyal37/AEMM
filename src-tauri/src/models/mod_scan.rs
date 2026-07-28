@@ -17,6 +17,7 @@ pub struct ModListItem {
     pub description: Option<String>,
     pub category: Option<String>,
     pub preview_path: Option<PathBuf>,
+    pub has_custom_preview: bool,
     pub favorite: bool,
     pub enabled: bool,
     pub size_bytes: u64,
@@ -120,4 +121,11 @@ pub struct ModDetails {
 #[serde(rename_all = "camelCase")]
 pub struct ModPreview {
     pub data_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetModPreview {
+    pub mod_id: Uuid,
+    pub source_path: PathBuf,
 }

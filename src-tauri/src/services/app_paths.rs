@@ -10,6 +10,7 @@ pub struct AppPaths {
     pub config_file: PathBuf,
     pub database_file: PathBuf,
     pub log_directory: PathBuf,
+    pub preview_directory: PathBuf,
     pub repository_directory: PathBuf,
     pub staging_directory: PathBuf,
 }
@@ -28,6 +29,7 @@ impl AppPaths {
             config_file: data_directory.join("config.json"),
             database_file: data_directory.join("mods.db"),
             log_directory: data_directory.join("logs"),
+            preview_directory: data_directory.join("previews"),
             repository_directory: data_directory.join("unconfigured-mods"),
             staging_directory: data_directory.join("staging"),
         })
@@ -38,6 +40,7 @@ impl AppPaths {
             parent_of(&self.config_file)?,
             parent_of(&self.database_file)?,
             self.log_directory.as_path(),
+            self.preview_directory.as_path(),
             self.staging_directory.as_path(),
         ];
 
@@ -101,6 +104,7 @@ impl AppPaths {
             config_file: root.join("config/config.json"),
             database_file: root.join("data/mods.db"),
             log_directory: root.join("logs"),
+            preview_directory: root.join("data/previews"),
             repository_directory: root.join("data/repository"),
             staging_directory: root.join("cache/staging"),
         }

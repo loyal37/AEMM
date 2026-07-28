@@ -55,6 +55,9 @@ pub enum AppError {
     #[error("mod metadata is invalid: {0}")]
     ModMetadata(String),
 
+    #[error("mod preview is invalid: {0}")]
+    ModPreview(String),
+
     #[error("archive processing failed: {0}")]
     Archive(String),
 

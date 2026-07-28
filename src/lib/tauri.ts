@@ -135,6 +135,22 @@ export async function selectModDirectory(): Promise<string | null> {
   return typeof selected === "string" ? selected : null;
 }
 
+export async function selectModPreviewImage(): Promise<string | null> {
+  requireDesktop();
+  const selected = await open({
+    multiple: false,
+    directory: false,
+    title: "选择模组预览图",
+    filters: [
+      {
+        name: "图片",
+        extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+      },
+    ],
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
 export async function prepareModImport(sourcePath: string): Promise<ModImportPlan> {
   requireDesktop();
   return invoke<ModImportPlan>("prepare_mod_import", {
@@ -241,6 +257,21 @@ export async function setModsEnabled(
 export async function getModPreview(modId: string): Promise<ModPreview | null> {
   if (!isTauri()) return getPreviewImage(modId);
   return invoke<ModPreview | null>("get_mod_preview", { modId });
+}
+
+export async function setModPreview(
+  modId: string,
+  sourcePath: string,
+): Promise<ModPreview> {
+  requireDesktop();
+  return invoke<ModPreview>("set_mod_preview", {
+    request: { modId, sourcePath },
+  });
+}
+
+export async function clearModPreview(modId: string): Promise<ModPreview | null> {
+  requireDesktop();
+  return invoke<ModPreview | null>("clear_mod_preview", { modId });
 }
 
 export async function openModDirectory(modId: string): Promise<void> {

@@ -17,6 +17,8 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 
 ### Added
 
+- Mod-detail preview editing by Windows drag-and-drop or native image picker, with local restore/remove controls and immediate card/detail cache updates.
+- AEMM-owned `data/previews` storage plus migration-backed local preview references, create-new import, database-failure rollback, replacement cleanup, and uninstall cleanup.
 - Initial product, architecture, data model, workflow, and security design.
 - EFMI/3DMigoto loader observations and explicit adaptation boundaries.
 - Phase-based implementation backlog and contributor/agent guidance.
@@ -75,7 +77,7 @@ All notable changes to AEMM are documented here. The project follows Keep a Chan
 - Revalidate game and loader executables as direct children of canonical working directories immediately before launch.
 - Treat every frontend-selected path as untrusted and refuse to persist it until the matching backend adapter succeeds.
 - Refuse to adopt non-empty custom repositories without a valid AEMM ownership marker, and skip links, junctions, reparse points, non-regular entries, unsafe relative names, and escaping preview paths during scans.
-- Restrict preview reads to contained repository files under 2 MiB with recognized raster signatures; reject SVG/HTML and never accept a frontend filesystem path for preview or directory opening.
+- Restrict preview reads/imports to valid PNG/JPEG/WebP/GIF files under 16 MiB, 8,192 pixels per edge, and 40 million total pixels; reject links, reparse points, SVG/HTML, malformed data, and unmanaged deletion targets.
 - Display author website metadata as untrusted text instead of creating an executable external link.
 - Reject absolute/UNC/device/archive-parent paths, Windows control/reserved names, case-insensitive file/ancestor collisions, links/reparse points, encrypted or multipart packages, ZIP overlapping data, excessive expansion, and out-of-policy output sizes before installation.
 - Never pass archive entry paths to native extraction destinations: all installed files are created through AEMM-controlled `create_new` paths inside marker-owned staging.

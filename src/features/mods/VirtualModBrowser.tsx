@@ -168,7 +168,7 @@ function ModCard({
           <ModPreviewImage
             modId={item.id}
             name={item.name}
-            hasPreview={Boolean(item.previewPath)}
+            hasPreview={Boolean(item.previewPath) || item.hasCustomPreview}
             variant="card"
           />
         </Link>
@@ -256,7 +256,7 @@ function ModListRow({
           <ModPreviewImage
             modId={item.id}
             name={item.name}
-            hasPreview={Boolean(item.previewPath)}
+            hasPreview={Boolean(item.previewPath) || item.hasCustomPreview}
             variant="list"
           />
         </Link>

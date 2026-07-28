@@ -29,6 +29,7 @@ impl From<AppError> for CommandError {
             ),
             AppError::ModScan(message) => ("MOD_SCAN_ERROR", message),
             AppError::ModMetadata(message) => ("MOD_METADATA_INVALID", message),
+            AppError::ModPreview(message) => ("MOD_PREVIEW_INVALID", message),
             AppError::Archive(message) => ("ARCHIVE_INVALID", message),
             AppError::ModInstall(message) => ("MOD_INSTALL_ERROR", message),
             AppError::Deployment(message) => ("MOD_DEPLOYMENT_ERROR", message),

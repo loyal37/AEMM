@@ -57,6 +57,7 @@ impl AppServices {
             &database,
             paths.repository_directory.clone(),
             paths.staging_directory.clone(),
+            paths.preview_directory.clone(),
             deployment.operation_lock(),
         );
         if let Err(error) = mods.recover_pending_removals().await {
@@ -280,6 +281,21 @@ impl AppServices {
 
     pub async fn mod_preview(&self, mod_id: uuid::Uuid) -> Result<Option<ModPreview>, AppError> {
         self.mods.preview(mod_id).await
+    }
+
+    pub async fn set_mod_preview(
+        &self,
+        mod_id: uuid::Uuid,
+        source_path: std::path::PathBuf,
+    ) -> Result<ModPreview, AppError> {
+        self.mods.set_preview(mod_id, source_path).await
+    }
+
+    pub async fn clear_mod_preview(
+        &self,
+        mod_id: uuid::Uuid,
+    ) -> Result<Option<ModPreview>, AppError> {
+        self.mods.clear_preview(mod_id).await
     }
 
     pub async fn mod_directory(&self, mod_id: uuid::Uuid) -> Result<std::path::PathBuf, AppError> {
